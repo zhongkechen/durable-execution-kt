@@ -77,9 +77,6 @@ jobs:
           git clone --depth 1 https://github.com/aws/aws-durable-execution-conformance-tests.git .conformance
           pip install ./.conformance/packages/aws-durable-execution-conformance-tests
 
-      - name: Build and test
-        run: ./gradlew build
-
       - name: Run ${{ matrix.suite }} conformance
         env:
           CONFORMANCE_SUITE: ${{ matrix.suite }}
