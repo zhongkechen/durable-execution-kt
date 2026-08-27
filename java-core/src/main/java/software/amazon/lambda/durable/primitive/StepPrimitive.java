@@ -93,19 +93,13 @@ public class StepPrimitive<T> extends SerializablePrimitive<T> {
 
     private int nextAttempt(Operation existing) {
         var details = existing.stepDetails();
-        if (existing.status() == OperationStatus.STARTED) {
-            // STARTED means user code already entered this attempt but never reached a
-            // terminal checkpoint. The service may expose that first in-flight attempt
-            // as null or 0, so replay must advance to at least the second attempt.
-            var checkpointedAttempt = details != null ? details.attempt() : null;
-            return checkpointedAttempt != null
-                    ? Math.max(checkpointedAttempt + 1, FIRST_ATTEMPT + 1)
-                    : FIRST_ATTEMPT + 1;
-        }
         if (details != null && details.attempt() != null) {
             return details.attempt() + 1;
         }
-        return FIRST_ATTEMPT;
+        // STARTED/READY proves that an earlier attempt already began. Older or interrupted
+        // checkpoints may omit StepDetails.attempt, but replay must still advance the
+        // StepContext attempt so user code can distinguish the re-execution.
+        return FIRST_ATTEMPT + 1;
     }
 
     private T extensionState(Operation existing) {
