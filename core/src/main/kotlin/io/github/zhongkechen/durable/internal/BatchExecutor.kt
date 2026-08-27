@@ -102,13 +102,33 @@ internal suspend fun <T> executeBatch(
                                         completionPolicy.count?.let { failures > it } ?: false
                                     val percentageExceeded =
                                         completionPolicy.percentage?.let {
-                                            received > 0 && failures * 100.0 / received > it
+                                            failures * 100.0 / work.size > it
                                         } ?: false
                                     if (countExceeded || percentageExceeded) {
                                         completion = BatchCompletion.FAILURE_LIMIT_EXCEEDED
                                         true
                                     } else {
                                         false
+                                    }
+                                }
+                                is CompletionPolicy.Combined -> {
+                                    val failureExceeded =
+                                        (completionPolicy.toleratedFailures?.let { failures > it } ?: false) ||
+                                            (
+                                                completionPolicy.toleratedFailurePercentage?.let {
+                                                    failures * 100.0 / work.size > it
+                                                } ?: false
+                                            )
+                                    when {
+                                        failureExceeded -> {
+                                            completion = BatchCompletion.FAILURE_LIMIT_EXCEEDED
+                                            true
+                                        }
+                                        completionPolicy.minimumSuccessful?.let { successes >= it } == true -> {
+                                            completion = BatchCompletion.MINIMUM_SUCCEEDED
+                                            true
+                                        }
+                                        else -> false
                                     }
                                 }
                             }

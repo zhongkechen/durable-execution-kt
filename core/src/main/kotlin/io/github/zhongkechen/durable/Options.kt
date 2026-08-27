@@ -34,6 +34,26 @@ public sealed interface CompletionPolicy {
             }
         }
     }
+
+    public data class Combined(
+        val minimumSuccessful: Int? = null,
+        val toleratedFailures: Int? = null,
+        val toleratedFailurePercentage: Double? = null,
+    ) : CompletionPolicy {
+        init {
+            require(
+                minimumSuccessful != null ||
+                    toleratedFailures != null ||
+                    toleratedFailurePercentage != null,
+            ) { "At least one completion limit is required" }
+            require(minimumSuccessful == null || minimumSuccessful >= 1)
+            require(toleratedFailures == null || toleratedFailures >= 0)
+            require(
+                toleratedFailurePercentage == null ||
+                    toleratedFailurePercentage in 0.0..100.0,
+            )
+        }
+    }
 }
 
 public data class StepOptions(

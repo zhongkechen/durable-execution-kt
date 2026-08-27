@@ -1,247 +1,246 @@
-// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0
 package parallel
 
-import java.time.Duration
-import software.amazon.lambda.durable.DurableFuture
-import software.amazon.lambda.durable.TypeToken
-import software.amazon.lambda.durable.config.CompletionConfig
-import software.amazon.lambda.durable.config.NestingType
-import software.amazon.lambda.durable.config.ParallelConfig
-import software.amazon.lambda.durable.kotlin.CompletionPolicy
-import software.amazon.lambda.durable.kotlin.KotlinDurableContext
-import software.amazon.lambda.durable.kotlin.KotlinDurableHandler
-import software.amazon.lambda.durable.kotlin.await
-import software.amazon.lambda.durable.model.ParallelResult
-import software.amazon.lambda.durable.serde.SerDes
+import io.github.zhongkechen.durable.BatchCompletion
+import io.github.zhongkechen.durable.CompletionPolicy
+import io.github.zhongkechen.durable.DurableContext
+import io.github.zhongkechen.durable.DurableFuture
+import io.github.zhongkechen.durable.DurableHandler
+import io.github.zhongkechen.durable.DurableRuntimeConfig
+import io.github.zhongkechen.durable.Nesting
+import io.github.zhongkechen.durable.ParallelOptions
+import io.github.zhongkechen.durable.ParallelResult
+import io.github.zhongkechen.durable.Serde
+import io.github.zhongkechen.durable.TypeRef
+import io.github.zhongkechen.durable.step
+import io.github.zhongkechen.durable.typeRef
+import kotlin.time.Duration.Companion.seconds
 
-public class ParallelBasic : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
+public class ParallelBasic(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("parallel", ParallelConfig.builder().maxConcurrency(1).build()) {
-            futures += branch<String>("branch-0") { step<String>("step-0") { "task-1" } }
-            futures += branch<String>("branch-1") { step<String>("step-1") { "task-2" } }
+        context.parallel("parallel", ParallelOptions(maximumConcurrency = 1)) {
+            futures += branch("branch-0", typeRef()) { step<String>("step-0") { "task-1" } }
+            futures += branch("branch-1", typeRef()) { step<String>("step-1") { "task-2" } }
         }
         return futures.map { it.await() }
     }
 }
 
-public class ParallelBranchesOnly : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
-        val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("branches-only", ParallelConfig.builder().maxConcurrency(1).build()) {
-            futures += branch<String>("branch-0") { "alpha" }
-            futures += branch<String>("branch-1") { "beta" }
+public class ParallelBranchesOnly(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
+        twoStrings(context, "branches-only", "alpha", "beta")
+}
+
+public class ParallelNamedBranches(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
+        lateinit var first: DurableFuture<String>
+        lateinit var second: DurableFuture<String>
+        context.parallel("named", ParallelOptions(maximumConcurrency = 1)) {
+            first = branch("first", typeRef()) { "one" }
+            second = branch("second", typeRef()) { "two" }
         }
-        return futures.map { it.await() }
+        return listOf(first.await(), second.await())
     }
 }
 
-public class ParallelNamedBranches : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
-        val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("named", ParallelConfig.builder().maxConcurrency(1).build()) {
-            futures += branch<String>("first") { "one" }
-            futures += branch<String>("second") { "two" }
+public class ParallelHeterogeneous(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<Any> {
+        lateinit var text: DurableFuture<String>
+        lateinit var number: DurableFuture<Int>
+        lateinit var data: DurableFuture<Map<String, String>>
+        context.parallel("hetero", ParallelOptions(maximumConcurrency = 1)) {
+            text = branch("branch-0", typeRef()) { "hello" }
+            number = branch("branch-1", typeRef()) { 42 }
+            data = branch("branch-2", typeRef()) { mapOf("k" to "v") }
         }
-        return futures.map { it.await() }
+        return listOf(text.await(), number.await(), data.await())
     }
 }
 
-public class ParallelHeterogeneous : KotlinDurableHandler<Any?, List<Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<Any> {
-        lateinit var stringFuture: DurableFuture<String>
-        lateinit var intFuture: DurableFuture<Int>
-        lateinit var mapFuture: DurableFuture<Map<String, String>>
-        context.parallel("hetero", ParallelConfig.builder().maxConcurrency(1).build()) {
-            stringFuture = branch("branch-0") { "hello" }
-            intFuture = branch("branch-1") { 42 }
-            mapFuture = branch("branch-2") { mapOf("k" to "v") }
-        }
-        return listOf(stringFuture.await(), intFuture.await(), mapFuture.await())
-    }
-}
-
-public class ParallelEmpty : KotlinDurableHandler<Any?, List<Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<Any> {
+public class ParallelEmpty(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<Any> {
         context.parallel("empty") {}
         return emptyList()
     }
 }
 
-public class ParallelFailFast : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class ParallelFailFast(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.parallel(
                 "failfast",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig.allSuccessful())
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.TolerateFailures(count = 0),
+                ),
             ) {
-                branch<String>("branch-0") { "ok" }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { "never" }
+                branch("branch-0", typeRef<String>()) { "ok" }
+                branch("branch-1", typeRef<String>()) { error("branch 1 failed") }
+                branch("branch-2", typeRef<String>()) { "never" }
             },
             includeStatus = true,
         )
 }
 
-public class ParallelThrowIfError : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String {
+public class ParallelThrowIfError(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String {
         lateinit var failed: DurableFuture<String>
         context.parallel(
             "throwing",
-            ParallelConfig.builder()
-                .maxConcurrency(1)
-                .completionConfig(CompletionConfig.allSuccessful())
-                .build(),
+            ParallelOptions(
+                maximumConcurrency = 1,
+                completion = CompletionPolicy.TolerateFailures(count = 0),
+            ),
         ) {
-            failed = branch("branch-0") { error("branch 0 failed") }
-            branch<String>("branch-1") { "never" }
+            failed = branch("branch-0", typeRef()) { error("branch 0 failed") }
+            branch("branch-1", typeRef<String>()) { "never" }
         }
         return failed.await()
     }
 }
 
-public class ParallelMinSuccessful : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class ParallelMinSuccessful(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.parallel(
                 "min-successful",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig.minSuccessful(2))
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.MinimumSuccessful(2),
+                ),
             ) {
-                branch<String>("branch-0") { "v0" }
-                branch<String>("branch-1") { "v1" }
-                branch<String>("branch-2") { "v2" }
-                branch<String>("branch-3") { "v3" }
+                repeat(4) { index ->
+                    branch("branch-$index", typeRef<String>()) { "v$index" }
+                }
             },
         ).filterKeys { it != "failureCount" }
 }
 
-public class ParallelToleratedWithin : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class ParallelToleratedWithin(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.parallel(
                 "tolerated",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig.toleratedFailureCount(1))
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.TolerateFailures(count = 1),
+                ),
             ) {
-                branch<String>("branch-0") { "s0" }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { "s2" }
+                branch("branch-0", typeRef<String>()) { "s0" }
+                branch("branch-1", typeRef<String>()) { error("branch 1 failed") }
+                branch("branch-2", typeRef<String>()) { "s2" }
             },
             includeStatus = true,
         )
 }
 
-public class ParallelToleratedExceeded : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class ParallelToleratedExceeded(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.parallel(
                 "tolerated-exceeded",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig.toleratedFailureCount(1))
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.TolerateFailures(count = 1),
+                ),
             ) {
-                branch<String>("branch-0") { error("branch 0 failed") }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { "never" }
+                branch("branch-0", typeRef<String>()) { error("branch 0 failed") }
+                branch("branch-1", typeRef<String>()) { error("branch 1 failed") }
+                branch("branch-2", typeRef<String>()) { "never" }
             },
         )
 }
 
-public class ParallelToleratedPct : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
-        summary(
-            context.parallel(
-                name = "tolerated-pct",
-                maxConcurrency = 1,
-                completion = CompletionPolicy.toleratedFailurePercentage(0.25),
-            ) {
-                branch<String>("branch-0") { error("branch 0 failed") }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { "never" }
-                branch<String>("branch-3") { "never" }
-            },
-        )
+public class ParallelToleratedPct(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
+        percentage(context, "tolerated-pct", failOnlyFirst = false)
 }
 
-public class ParallelPctBoundary : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
-        summary(
-            context.parallel(
-                name = "pct-boundary",
-                maxConcurrency = 1,
-                completion = CompletionPolicy.toleratedFailurePercentage(0.25),
-            ) {
-                branch<String>("branch-0") { error("branch 0 failed") }
-                branch<String>("branch-1") { "ok1" }
-                branch<String>("branch-2") { "ok2" }
-                branch<String>("branch-3") { "ok3" }
-            },
-            includeStatus = true,
-        )
+public class ParallelPctBoundary(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
+        percentage(context, "pct-boundary", failOnlyFirst = true)
 }
 
-public class ParallelItemSerdes : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
+public class ParallelItemSerdes(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
         context.parallel(
-            name = "serde",
-            maxConcurrency = 1,
-            itemSerDes = WrappedBranchSerDes,
+            "serde",
+            ParallelOptions(maximumConcurrency = 1, itemSerde = WrappedBranchSerde),
         ) {
-            futures += branch<String>("branch-0") { "x" }
-            futures += branch<String>("branch-1") { "y" }
+            futures += branch("branch-0", typeRef()) { "x" }
+            futures += branch("branch-1", typeRef()) { "y" }
         }
         return futures.map { it.await() }
     }
 }
 
-public class ParallelConcurrent : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
+public class ParallelConcurrent(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("concurrent", ParallelConfig.builder().maxConcurrency(2).build()) {
-            futures += branch<String>("branch-0") { "r0" }
-            futures += branch<String>("branch-1") { "r1" }
-            futures += branch<String>("branch-2") { "r2" }
+        context.parallel("concurrent", ParallelOptions(maximumConcurrency = 2)) {
+            repeat(3) { index ->
+                futures += branch("branch-$index", typeRef()) { "r$index" }
+            }
         }
         return futures.map { it.await() }
     }
 }
 
-public class ParallelFlat : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
+public class ParallelFlat(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
         context.parallel(
             "flat",
-            ParallelConfig.builder()
-                .maxConcurrency(1)
-                .nestingType(NestingType.FLAT)
-                .build(),
+            ParallelOptions(maximumConcurrency = 1, nesting = Nesting.FLAT),
         ) {
-            futures += branch<String>("branch-0") { step<String>("step-0") { "fa" } }
-            futures += branch<String>("branch-1") { step<String>("step-1") { "fb" } }
+            futures += branch("branch-0", typeRef()) { step<String>("step-0") { "fa" } }
+            futures += branch("branch-1", typeRef()) { step<String>("step-1") { "fb" } }
         }
         return futures.map { it.await() }
     }
 }
 
-public class ParallelReplaySkipsSucceeded : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
+public class ParallelReplaySkipsSucceeded(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("replay", ParallelConfig.builder().maxConcurrency(1).build()) {
-            futures += branch<String>("branch-0") { step<String>("step-0") { "b0" } }
+        context.parallel("replay", ParallelOptions(maximumConcurrency = 1)) {
+            futures += branch("branch-0", typeRef()) { step<String>("step-0") { "b0" } }
             futures +=
-                branch<String>("branch-1") {
-                    wait(Duration.ofSeconds(2))
+                branch("branch-1", typeRef()) {
+                    wait(2.seconds)
                     "b1"
                 }
         }
@@ -249,131 +248,190 @@ public class ParallelReplaySkipsSucceeded : KotlinDurableHandler<Any?, List<Stri
     }
 }
 
-public class ParallelAllFail : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class ParallelAllFail(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.parallel(
                 "all-fail",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig.toleratedFailureCount(3))
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.TolerateFailures(count = 3),
+                ),
             ) {
-                branch<String>("branch-0") { error("branch 0 failed") }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { error("branch 2 failed") }
+                repeat(3) { index ->
+                    branch("branch-$index", typeRef<String>()) { error("branch $index failed") }
+                }
             },
             includeStatus = true,
         )
 }
 
-public class ParallelMinNotReached : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class ParallelMinNotReached(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.parallel(
                 "min-not-reached",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig.minSuccessful(3))
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.MinimumSuccessful(3),
+                ),
             ) {
-                branch<String>("branch-0") { "ok0" }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { "ok2" }
+                branch("branch-0", typeRef<String>()) { "ok0" }
+                branch("branch-1", typeRef<String>()) { error("branch 1 failed") }
+                branch("branch-2", typeRef<String>()) { "ok2" }
             },
             includeStatus = true,
         )
 }
 
-public class ParallelCombinedConfig : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class ParallelCombinedConfig(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.parallel(
                 "combined",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig(3, 1, null))
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion =
+                        CompletionPolicy.Combined(
+                            minimumSuccessful = 3,
+                            toleratedFailures = 1,
+                        ),
+                ),
             ) {
-                branch<String>("branch-0") { error("branch 0 failed") }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { "ok2" }
-                branch<String>("branch-3") { "ok3" }
+                branch("branch-0", typeRef<String>()) { error("branch 0 failed") }
+                branch("branch-1", typeRef<String>()) { error("branch 1 failed") }
+                branch("branch-2", typeRef<String>()) { "ok2" }
+                branch("branch-3", typeRef<String>()) { "ok3" }
             },
         )
 }
 
-public class ParallelBadConcurrency : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
-        val config = ParallelConfig.builder().maxConcurrency(0).build()
-        val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("bad-concurrency", config) {
-            futures += branch<String>("branch-0") { "a" }
-            futures += branch<String>("branch-1") { "b" }
+public class ParallelBadConcurrency(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
+        val options = ParallelOptions(maximumConcurrency = 0)
+        context.parallel("bad-concurrency", options) {
+            branch("branch-0", typeRef<String>()) { "a" }
+            branch("branch-1", typeRef<String>()) { "b" }
         }
-        return futures.map { it.await() }
+        return emptyList()
     }
 }
 
-public class ParallelAccessors : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> {
+public class ParallelAccessors(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> {
         val result =
             context.parallel(
                 "accessors",
-                ParallelConfig.builder()
-                    .maxConcurrency(1)
-                    .completionConfig(CompletionConfig.toleratedFailureCount(1))
-                    .build(),
+                ParallelOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.TolerateFailures(count = 1),
+                ),
             ) {
-                branch<String>("branch-0") { "ok0" }
-                branch<String>("branch-1") { error("branch 1 failed") }
-                branch<String>("branch-2") { "ok2" }
+                branch("branch-0", typeRef<String>()) { "ok0" }
+                branch("branch-1", typeRef<String>()) { error("branch 1 failed") }
+                branch("branch-2", typeRef<String>()) { "ok2" }
             }
         return mapOf(
-            "hasFailure" to (result.failed() > 0),
-            "successCount" to result.succeeded(),
-            "failureCount" to result.failed(),
-            "errorCount" to result.failed(),
+            "hasFailure" to result.hasFailure,
+            "successCount" to result.successes.size,
+            "failureCount" to result.failures.size,
+            "errorCount" to result.failures.size,
         )
     }
 }
 
-public class ParallelNested : KotlinDurableHandler<Any?, Any>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Any {
-        lateinit var outerBranch: DurableFuture<List<String>>
-        context.parallel("outer", ParallelConfig.builder().maxConcurrency(1).build()) {
-            outerBranch =
-                branch<List<String>>("branchA") {
+public class ParallelNested(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Any>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Any {
+        lateinit var outer: DurableFuture<List<String>>
+        context.parallel("outer", ParallelOptions(maximumConcurrency = 1)) {
+            outer =
+                branch("branchA", typeRef()) {
                     val inner = mutableListOf<DurableFuture<String>>()
-                    parallel("inner", ParallelConfig.builder().maxConcurrency(1).build()) {
-                        inner += branch<String>("inner-0") { step<String>("step-0") { "i1" } }
-                        inner += branch<String>("inner-1") { step<String>("step-1") { "i2" } }
+                    parallel("inner", ParallelOptions(maximumConcurrency = 1)) {
+                        inner += branch("inner-0", typeRef()) { step<String>("step-0") { "i1" } }
+                        inner += branch("inner-1", typeRef()) { step<String>("step-1") { "i2" } }
                     }
                     inner.map { it.await() }
                 }
         }
-        return listOf(outerBranch.await())
+        return listOf(outer.await())
     }
 }
+
+private suspend fun twoStrings(
+    context: DurableContext,
+    name: String,
+    firstValue: String,
+    secondValue: String,
+): List<String> {
+    lateinit var first: DurableFuture<String>
+    lateinit var second: DurableFuture<String>
+    context.parallel(name, ParallelOptions(maximumConcurrency = 1)) {
+        first = branch("branch-0", typeRef()) { firstValue }
+        second = branch("branch-1", typeRef()) { secondValue }
+    }
+    return listOf(first.await(), second.await())
+}
+
+private suspend fun percentage(
+    context: DurableContext,
+    name: String,
+    failOnlyFirst: Boolean,
+): Map<String, Any> =
+    summary(
+        context.parallel(
+            name,
+            ParallelOptions(
+                maximumConcurrency = 1,
+                completion = CompletionPolicy.TolerateFailures(percentage = 25.0),
+            ),
+        ) {
+            branch("branch-0", typeRef<String>()) { error("branch 0 failed") }
+            branch("branch-1", typeRef<String>()) {
+                if (!failOnlyFirst) error("branch 1 failed")
+                "ok1"
+            }
+            branch("branch-2", typeRef<String>()) { "ok2" }
+            branch("branch-3", typeRef<String>()) { "ok3" }
+        },
+        includeStatus = failOnlyFirst,
+    )
 
 private fun summary(
     result: ParallelResult,
     includeStatus: Boolean = false,
 ): Map<String, Any> =
     linkedMapOf<String, Any>().apply {
-        put("completionReason", result.completionStatus().name)
-        if (includeStatus) put("status", if (result.failed() > 0) "FAILED" else "SUCCEEDED")
-        put("successCount", result.succeeded())
-        put("failureCount", result.failed())
-        put("totalCount", result.succeeded() + result.failed())
+        put(
+            "completionReason",
+            when (result.completion) {
+                BatchCompletion.ALL_COMPLETED -> "ALL_COMPLETED"
+                BatchCompletion.MINIMUM_SUCCEEDED -> "MIN_SUCCESSFUL_REACHED"
+                BatchCompletion.FAILURE_LIMIT_EXCEEDED -> "FAILURE_TOLERANCE_EXCEEDED"
+            },
+        )
+        if (includeStatus) put("status", if (result.hasFailure) "FAILED" else "SUCCEEDED")
+        put("successCount", result.successes.size)
+        put("failureCount", result.failures.size)
+        put("totalCount", result.successes.size + result.failures.size)
     }
 
-private object WrappedBranchSerDes : SerDes {
-    override fun serialize(value: Any?): String? = value?.let { """{"wrapped":"$it"}""" }
+private object WrappedBranchSerde : Serde {
+    override fun encode(value: Any?): String = """{"wrapped":"$value"}"""
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any?> deserialize(data: String?, typeToken: TypeToken<T>): T {
-        val value = data?.substringAfter("\"wrapped\":\"")?.substringBefore('"')
-        return value as T
-    }
+    override fun <T> decode(payload: String, type: TypeRef<T>): T =
+        payload.substringAfter("\"wrapped\":\"").substringBefore('"') as T
 }
