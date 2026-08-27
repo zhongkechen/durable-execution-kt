@@ -1,6 +1,10 @@
 name: Cloud conformance
 
 on:
+  pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       suite:
@@ -25,14 +29,19 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: cloud-conformance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   conformance:
     name: ${{ matrix.suite }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJSON(inputs.suite == 'all' && '["step","wait","child","callback","invoke","wait_for_condition","wait_for_callback","parallel","map","plugin"]' || format('["{0}"]', inputs.suite)) }}
+        suite: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.suite == 'all') && '["step","wait","child","callback","invoke","wait_for_condition","wait_for_callback","parallel","map","plugin"]' || format('["{0}"]', inputs.suite)) }}
 
     steps:
       - uses: actions/checkout@v4
