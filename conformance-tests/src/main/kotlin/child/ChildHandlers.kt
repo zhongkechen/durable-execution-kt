@@ -4,6 +4,10 @@ package child
 
 import java.time.Duration
 import kotlinx.coroutines.delay
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue
+import software.amazon.awssdk.services.dynamodb.model.ReturnValue
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest
 import software.amazon.lambda.durable.TypeToken
 import software.amazon.lambda.durable.config.RunInChildContextConfig
 import software.amazon.lambda.durable.config.StepConfig
@@ -154,16 +158,38 @@ public class ChildLargePayload :
 }
 
 public class ChildInterrupted : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("interrupted-child") {
+    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+        val executionId = context.javaContext.executionArn
+        return context.childContext("interrupted-child") {
             step<String>("crashable-step") {
-                if (attempt == 1) {
+                val response =
+                    dynamoDb.updateItem(
+                        UpdateItemRequest.builder()
+                            .tableName(tableName)
+                            .key(mapOf("executionId" to AttributeValue.builder().s(executionId).build()))
+                            .updateExpression("SET attemptCount = if_not_exists(attemptCount, :zero) + :inc")
+                            .expressionAttributeValues(
+                                mapOf(
+                                    ":zero" to AttributeValue.builder().n("0").build(),
+                                    ":inc" to AttributeValue.builder().n("1").build(),
+                                ),
+                            ).returnValues(ReturnValue.UPDATED_NEW)
+                            .build(),
+                    )
+                val attemptCount = response.attributes()["attemptCount"]!!.n().toInt()
+                if (attemptCount < 2) {
                     delay(1_000)
                     exitProcess()
                 }
                 input
             }
         }
+    }
+
+    private companion object {
+        val dynamoDb: DynamoDbClient = DynamoDbClient.create()
+        val tableName: String = System.getenv("ATTEMPTS_TABLE_NAME") ?: "KotlinAttempts"
+    }
 }
 
 public class ChildWaitReplay : KotlinDurableHandler<String, String>() {

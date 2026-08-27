@@ -15,6 +15,8 @@ dependencies {
     implementation("com.amazonaws:aws-lambda-java-core:1.4.0")
     implementation("com.amazonaws:aws-lambda-java-log4j2:1.6.4")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation(platform("software.amazon.awssdk:bom:2.53.1"))
+    implementation("software.amazon.awssdk:dynamodb")
     implementation("org.apache.logging.log4j:log4j-slf4j2-impl:2.26.1")
     implementation("org.apache.logging.log4j:log4j-core:2.26.1")
     implementation("org.apache.logging.log4j:log4j-layout-template-json:2.26.1")
