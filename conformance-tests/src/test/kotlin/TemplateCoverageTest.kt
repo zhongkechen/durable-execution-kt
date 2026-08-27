@@ -17,9 +17,10 @@ class TemplateCoverageTest {
             assertFalse(source.contains("NotImplemented:"), "${template.name} declares an implementation gap")
             handlerRegex.findAll(source).forEach { match ->
                 val handler = match.groupValues[1].substringBefore("::")
+                val loaded = runCatching { Class.forName(handler, false, javaClass.classLoader) }
                 assertTrue(
-                    runCatching { Class.forName(handler) }.isSuccess,
-                    "${template.name} references missing handler $handler",
+                    loaded.isSuccess,
+                    "${template.name} references missing handler $handler: ${loaded.exceptionOrNull()}",
                 )
             }
         }
