@@ -5,6 +5,12 @@ import io.github.zhongkechen.durable.ChildOptions
 import io.github.zhongkechen.durable.CallbackFailureException
 import io.github.zhongkechen.durable.CallbackHandle
 import io.github.zhongkechen.durable.CallbackOptions
+import io.github.zhongkechen.durable.CallbackSubmitterScope
+import io.github.zhongkechen.durable.CallbackWaitOptions
+import io.github.zhongkechen.durable.ConditionDecision
+import io.github.zhongkechen.durable.ConditionFailureException
+import io.github.zhongkechen.durable.ConditionOptions
+import io.github.zhongkechen.durable.ConditionScope
 import io.github.zhongkechen.durable.DeliverySemantics
 import io.github.zhongkechen.durable.DurableFuture
 import io.github.zhongkechen.durable.InvokeFailureException
@@ -207,6 +213,120 @@ internal class OperationRuntime(
             serde = options.serde ?: defaultSerde,
             ledger = ledger,
         )
+    }
+
+    suspend fun <T> waitForCallback(
+        name: String?,
+        type: TypeRef<T>,
+        options: CallbackWaitOptions = CallbackWaitOptions(),
+        submitter: suspend CallbackSubmitterScope.() -> Unit,
+    ): T {
+        val callbackName = name?.let { "$it-callback" }
+        val submitterName = name?.let { "$it-submitter" }
+        val callback = callback(callbackName, type, options.callback)
+        step(
+            name = submitterName,
+            type = typeRef<Unit>(),
+            options = options.submitter,
+        ) {
+            submitter(CallbackSubmitterScopeImpl(callback.id, attempt))
+        }
+        return callback.await()
+    }
+
+    suspend fun <T> waitForCondition(
+        name: String?,
+        type: TypeRef<T>,
+        options: ConditionOptions<T>,
+        check: suspend ConditionScope<T>.() -> ConditionDecision<T>,
+    ): T {
+        val identity = reserve(name, OperationKind.STEP, "WaitForCondition")
+        val existing = ledger.find(identity)
+        when (existing?.status) {
+            CheckpointStatus.SUCCEEDED ->
+                return decodeResult(existing, type, options.serde)
+            CheckpointStatus.FAILED,
+            CheckpointStatus.TIMED_OUT,
+            CheckpointStatus.STOPPED,
+            CheckpointStatus.CANCELLED,
+            -> throw ConditionFailureException(
+                identity.id,
+                RuntimeException(existing.error?.message ?: "Checkpointed condition failure"),
+            )
+            CheckpointStatus.PENDING ->
+                throw ExecutionSuspended(identity.id, existing.nextAttemptAt)
+            CheckpointStatus.STARTED,
+            CheckpointStatus.READY,
+            null,
+            -> Unit
+            CheckpointStatus.UNKNOWN ->
+                error("Condition ${identity.id} has an unsupported checkpoint status")
+        }
+
+        val attempt = (existing?.attempt ?: 0) + 1
+        val state =
+            if (existing?.resultPayload != null) {
+                (options.serde ?: defaultSerde).decode(existing.resultPayload, type)
+            } else {
+                options.initialState
+            }
+        @Suppress("UNCHECKED_CAST")
+        val currentState = state as T
+
+        if (existing == null || existing.status == CheckpointStatus.READY) {
+            checkpoints.checkpoint(CheckpointCommand(identity, CheckpointAction.START))
+        }
+
+        return try {
+            when (val decision = check(ConditionScopeImpl(currentState, attempt))) {
+                is ConditionDecision.Complete -> {
+                    val serde = options.serde ?: defaultSerde
+                    val payload = serde.encode(decision.result)
+                    val normalized = serde.decode(payload, type)
+                    checkpoints.checkpoint(
+                        CheckpointCommand(
+                            identity = identity,
+                            action = CheckpointAction.SUCCEED,
+                            payload = payload,
+                        ),
+                    )
+                    normalized
+                }
+                is ConditionDecision.Continue -> {
+                    if (options.maximumAttempts != null && attempt >= options.maximumAttempts) {
+                        throw IllegalStateException(
+                            "Condition ${identity.id} exhausted ${options.maximumAttempts} attempts",
+                        )
+                    }
+                    val serde = options.serde ?: defaultSerde
+                    val payload = serde.encode(decision.state)
+                    val normalized = serde.decode(payload, type)
+                    val delay = options.delay(normalized, attempt)
+                    require(delay.isPositive()) { "Condition retry delay must be positive" }
+                    val resumeAt = Instant.now().plusMillis(delay.inWholeMilliseconds)
+                    checkpoints.checkpoint(
+                        CheckpointCommand(
+                            identity = identity,
+                            action = CheckpointAction.RETRY,
+                            payload = payload,
+                            retryDelay = delay,
+                        ),
+                    )
+                    throw ExecutionSuspended(identity.id, resumeAt)
+                }
+            }
+        } catch (suspension: ExecutionSuspended) {
+            throw suspension
+        } catch (error: Throwable) {
+            checkpoints.checkpoint(
+                CheckpointCommand(
+                    identity = identity,
+                    action = CheckpointAction.FAIL,
+                    error = error.toCheckpointError(),
+                ),
+            )
+            throw ConditionFailureException(identity.id, error)
+        }
     }
 
     suspend fun <T> child(
@@ -631,6 +751,16 @@ internal class OperationRuntime(
     private data class StepScopeImpl(
         override val attempt: Int,
     ) : StepScope
+
+    private data class CallbackSubmitterScopeImpl(
+        override val callbackId: String,
+        override val attempt: Int,
+    ) : CallbackSubmitterScope
+
+    private data class ConditionScopeImpl<T>(
+        override val state: T,
+        override val attempt: Int,
+    ) : ConditionScope<T>
 }
 
 private data class BatchCheckpoint(

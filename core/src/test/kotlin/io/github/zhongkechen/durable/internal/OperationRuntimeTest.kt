@@ -2,6 +2,9 @@ package io.github.zhongkechen.durable.internal
 
 import io.github.zhongkechen.durable.ChildOptions
 import io.github.zhongkechen.durable.CallbackOptions
+import io.github.zhongkechen.durable.CallbackWaitOptions
+import io.github.zhongkechen.durable.ConditionDecision
+import io.github.zhongkechen.durable.ConditionOptions
 import io.github.zhongkechen.durable.InvokeOptions
 import io.github.zhongkechen.durable.CompletionPolicy
 import io.github.zhongkechen.durable.ItemResult
@@ -285,6 +288,96 @@ class OperationRuntimeTest {
             assertEquals(listOf("ready", 7), replayed.values())
             assertEquals("ready", replayedText.await())
             assertFalse(replayCalled)
+            replayHarness.close()
+        }
+
+    @Test
+    fun `condition checkpoints state and completes from ready replay`() =
+        runtimeTest { runtime, service, dispatcher ->
+            assertFailsWith<ExecutionSuspended> {
+                runtime.waitForCondition(
+                    name = "poll",
+                    type = typeRef<Int>(),
+                    options =
+                        ConditionOptions(
+                            initialState = 0,
+                            delay = { _, _ -> 1.seconds },
+                        ),
+                ) {
+                    ConditionDecision.Continue(state + 1)
+                }
+            }
+            assertEquals(CheckpointAction.RETRY, service.commands.last().action)
+            assertEquals("1", service.commands.last().payload)
+
+            val identity = rootIdentity("1", "poll", OperationKind.STEP, "WaitForCondition")
+            val ready =
+                OperationRecord(
+                    identity = identity,
+                    status = CheckpointStatus.READY,
+                    attempt = 1,
+                    resultPayload = "1",
+                )
+            service.force(ready)
+            val replayHarness = runtime(listOf(ready), service, dispatcher)
+            val result =
+                replayHarness.runtime.waitForCondition(
+                    name = "poll",
+                    type = typeRef<Int>(),
+                    options = ConditionOptions(delay = { _, _ -> 1.seconds }),
+                ) {
+                    assertEquals(2, attempt)
+                    ConditionDecision.Complete(state + 1)
+                }
+            assertEquals(2, result)
+            replayHarness.close()
+        }
+
+    @Test
+    fun `wait for callback checkpoints submitter once and resumes from callback result`() =
+        runtimeTest { runtime, service, dispatcher ->
+            var submittedId: String? = null
+            assertFailsWith<ExecutionSuspended> {
+                runtime.waitForCallback(
+                    name = "approval",
+                    type = typeRef<String>(),
+                    options = CallbackWaitOptions(),
+                ) {
+                    submittedId = callbackId
+                }
+            }
+            assertEquals("callback-1", submittedId)
+
+            val callbackIdentity =
+                rootIdentity("1", "approval-callback", OperationKind.CALLBACK, "Callback")
+            val submitterIdentity =
+                rootIdentity("2", "approval-submitter", OperationKind.STEP, "Step")
+            val completed =
+                listOf(
+                    OperationRecord(
+                        identity = callbackIdentity,
+                        status = CheckpointStatus.SUCCEEDED,
+                        resultPayload = "\"yes\"",
+                        callbackId = "callback-1",
+                    ),
+                    OperationRecord(
+                        identity = submitterIdentity,
+                        status = CheckpointStatus.SUCCEEDED,
+                        resultPayload = "{}",
+                    ),
+                )
+            completed.forEach(service::force)
+            val replayHarness = runtime(completed, service, dispatcher)
+            var replaySubmitted = false
+            val result =
+                replayHarness.runtime.waitForCallback(
+                    name = "approval",
+                    type = typeRef<String>(),
+                ) {
+                    replaySubmitted = true
+                }
+            assertEquals("yes", result)
+            assertFalse(replaySubmitted)
             replayHarness.close()
         }
 
