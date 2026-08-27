@@ -31,6 +31,14 @@ tasks.test {
     systemProperty("conformance.projectDir", projectDir.absolutePath)
 }
 
+val generateTemplates = tasks.register<Exec>("generateTemplates") {
+    commandLine("python3", "scripts/templates.py", "generate")
+}
+
+val verifyTemplates = tasks.register<Exec>("verifyTemplates") {
+    commandLine("python3", "scripts/templates.py", "check")
+}
+
 tasks.shadowJar {
     archiveClassifier.set("all")
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
@@ -40,4 +48,5 @@ tasks.shadowJar {
 
 tasks.build {
     dependsOn(tasks.shadowJar)
+    dependsOn(verifyTemplates)
 }
