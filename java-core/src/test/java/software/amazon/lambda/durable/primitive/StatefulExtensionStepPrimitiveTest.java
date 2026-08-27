@@ -210,9 +210,11 @@ class StatefulExtensionStepPrimitiveTest {
     }
 
     @Test
-    void replayInterruptedStartedStepWithoutCheckpointedAttemptUsesSecondAttempt() throws Exception {
+    void replayInterruptedStartedStepWithZeroCheckpointedAttemptUsesSecondAttempt() throws Exception {
         when(executionManager.getOperationAndUpdateReplayState(OPERATION_ID))
-                .thenReturn(operation(OperationStatus.STARTED, StepDetails.builder().build()));
+                .thenReturn(operation(
+                        OperationStatus.STARTED,
+                        StepDetails.builder().attempt(0).build()));
         var operation = createOperation(state -> completedFuture(ExtensionStepResult.succeed(state)));
 
         operation.execute();
