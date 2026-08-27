@@ -38,6 +38,8 @@ jobs:
     name: ${{ matrix.suite }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
+    env:
+      CONFORMANCE_SUITE: ${{ matrix.suite }}
     concurrency:
       group: cloud-conformance-stack-${{ matrix.suite }}
       cancel-in-progress: false
@@ -73,27 +75,55 @@ jobs:
         run: |
           test "$(aws sts get-caller-identity --query Account --output text)" = "${{ secrets.INTEGRATION_ACCOUNT }}"
 
+      - name: Resolve shared stack
+        run: |
+          stack_suite="${CONFORMANCE_SUITE//_/-}"
+          echo "CONFORMANCE_RUN_NAME=kotlin-${stack_suite}-persistent" >> "$GITHUB_ENV"
+          echo "CONFORMANCE_STACK_NAME=conformance-tests-kotlin-${stack_suite}-persistent" >> "$GITHUB_ENV"
+
+      - name: Recover non-updatable shared stack
+        run: |
+          stack_status="$(
+            aws cloudformation describe-stacks \
+              --stack-name "${CONFORMANCE_STACK_NAME}" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || true
+          )"
+          if [[ "${stack_status}" == "ROLLBACK_COMPLETE" ]]; then
+            aws cloudformation delete-stack --stack-name "${CONFORMANCE_STACK_NAME}"
+            aws cloudformation wait stack-delete-complete --stack-name "${CONFORMANCE_STACK_NAME}"
+          fi
+
       - name: Install conformance runner
         run: |
           git clone --depth 1 https://github.com/aws/aws-durable-execution-conformance-tests.git .conformance
           pip install ./.conformance/packages/aws-durable-execution-conformance-tests
 
       - name: Run ${{ matrix.suite }} conformance
-        env:
-          CONFORMANCE_SUITE: ${{ matrix.suite }}
         run: |
-          stack_suite="${CONFORMANCE_SUITE//_/-}"
           python -m aws_durable_execution_conformance_tests.app \
             --template "conformance-tests/template_${CONFORMANCE_SUITE}.yaml" \
             --language kotlin \
             --region us-west-2 \
             --suite "${CONFORMANCE_SUITE}" \
-            --name "kotlin-${stack_suite}-persistent" \
+            --name "${CONFORMANCE_RUN_NAME}" \
             --history-dir "conformance-output/${CONFORMANCE_SUITE}" \
             --report console json junit github \
             --report-file "conformance-output/${CONFORMANCE_SUITE}/report" \
             --fail-on failed+uncovered \
             --no-cleanup
+
+      - name: Show shared stack failure events
+        if: failure()
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "${CONFORMANCE_STACK_NAME}" \
+            --query 'Stacks[0].[StackStatus,StackStatusReason]' \
+            --output table || true
+          aws cloudformation describe-stack-events \
+            --stack-name "${CONFORMANCE_STACK_NAME}" \
+            --query 'StackEvents[?contains(ResourceStatus, `FAILED`)].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+            --output table || true
 
       - uses: actions/upload-artifact@v4
         if: always()
