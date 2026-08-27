@@ -1,5 +1,8 @@
 package io.github.zhongkechen.durable.internal
 
+import io.github.zhongkechen.durable.DurableBackend
+import io.github.zhongkechen.durable.toInternal
+import io.github.zhongkechen.durable.toPublic
 import java.time.Instant
 import kotlin.time.Duration
 import software.amazon.awssdk.services.lambda.LambdaClient
@@ -112,6 +115,25 @@ internal interface DurableService {
         checkpointToken: String,
         marker: String?,
     ): ServicePage
+}
+
+internal class BackendDurableService(
+    private val backend: DurableBackend,
+) : DurableService {
+    override fun checkpoint(
+        executionArn: String,
+        checkpointToken: String,
+        commands: List<CheckpointCommand>,
+    ): CheckpointReply =
+        backend
+            .checkpoint(executionArn, checkpointToken, commands.map(CheckpointCommand::toPublic))
+            .toInternal()
+
+    override fun getState(
+        executionArn: String,
+        checkpointToken: String,
+        marker: String?,
+    ): ServicePage = backend.getState(executionArn, checkpointToken, marker).toInternal()
 }
 
 internal class LambdaDurableService(

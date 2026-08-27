@@ -5,7 +5,7 @@ import com.amazonaws.services.lambda.runtime.RequestStreamHandler
 import io.github.zhongkechen.durable.internal.DurableService
 import io.github.zhongkechen.durable.internal.ExecutionEngine
 import io.github.zhongkechen.durable.internal.InvocationRequest
-import io.github.zhongkechen.durable.internal.LambdaDurableService
+import io.github.zhongkechen.durable.internal.BackendDurableService
 import io.github.zhongkechen.durable.internal.WireProtocol
 import java.io.InputStream
 import java.io.OutputStream
@@ -16,11 +16,10 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
-import software.amazon.awssdk.services.lambda.LambdaClient
 
 public data class DurableRuntimeConfig(
     val serde: Serde = JsonSerde(),
-    val lambdaClient: LambdaClient = LambdaClient.create(),
+    val backend: DurableBackend = LambdaBackend(),
     val dispatcher: CoroutineDispatcher = DurableDispatchers.virtualThreads,
     val checkpointBatchWindow: Duration = 5.milliseconds,
 )
@@ -39,7 +38,7 @@ public abstract class DurableHandler<I, O>(
     public val config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : RequestStreamHandler {
     private val wire = WireProtocol()
-    private val service: DurableService = LambdaDurableService(config.lambdaClient)
+    private val service: DurableService = BackendDurableService(config.backend)
     private val engine =
         ExecutionEngine(
             service = service,
