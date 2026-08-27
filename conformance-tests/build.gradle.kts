@@ -11,6 +11,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":core"))
     implementation(project(":sdk"))
     implementation("com.amazonaws:aws-lambda-java-core:1.4.0")
     implementation("com.amazonaws:aws-lambda-java-log4j2:1.6.4")
@@ -20,6 +21,7 @@ dependencies {
     implementation("org.apache.logging.log4j:log4j-layout-template-json:2.26.1")
 
     testImplementation(kotlin("test"))
+    testImplementation(project(":testing"))
     testImplementation(project(":java-testing"))
     testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.3")

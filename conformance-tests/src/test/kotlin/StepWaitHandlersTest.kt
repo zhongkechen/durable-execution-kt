@@ -1,6 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import io.github.zhongkechen.durable.testing.LocalDurableRunner
+import io.github.zhongkechen.durable.testing.LocalExecutionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import software.amazon.lambda.durable.AsyncDurableHandler
@@ -47,8 +49,13 @@ class StepWaitHandlersTest {
 
     @Test
     fun sequentialWaitsComplete() {
-        val result = run(WaitMultipleSequential(), null, anyClass, mapClass)
-        assertEquals(2, result["completedWaits"])
+        val runner =
+            LocalDurableRunner.create<Any?, Map<String, Int>> { config ->
+                WaitMultipleSequential(config)
+            }
+        val result = runner.runUntilComplete(null)
+        assertEquals(LocalExecutionStatus.SUCCEEDED, result.status, result.error?.message)
+        assertEquals(2, result.result?.get("completedWaits"))
     }
 
     private fun <I, O> run(
