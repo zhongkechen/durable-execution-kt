@@ -346,19 +346,38 @@ class OperationRuntimeTest {
                     submittedId = callbackId
                 }
             }
-            assertEquals("callback-1", submittedId)
+            assertEquals("callback-2", submittedId)
 
+            val parentIdentity =
+                rootIdentity("1", "approval", OperationKind.CONTEXT, "WaitForCallback")
+            val childIds = OperationIdSequence(parentIdentity.id)
             val callbackIdentity =
-                rootIdentity("1", "approval-callback", OperationKind.CALLBACK, "Callback")
+                OperationIdentity(
+                    id = childIds.next(),
+                    name = null,
+                    kind = OperationKind.CALLBACK,
+                    subtype = "Callback",
+                    parentId = parentIdentity.id,
+                )
             val submitterIdentity =
-                rootIdentity("2", "approval-submitter", OperationKind.STEP, "Step")
+                OperationIdentity(
+                    id = childIds.next(),
+                    name = null,
+                    kind = OperationKind.STEP,
+                    subtype = "Step",
+                    parentId = parentIdentity.id,
+                )
             val completed =
                 listOf(
+                    OperationRecord(
+                        identity = parentIdentity,
+                        status = CheckpointStatus.STARTED,
+                    ),
                     OperationRecord(
                         identity = callbackIdentity,
                         status = CheckpointStatus.SUCCEEDED,
                         resultPayload = "\"yes\"",
-                        callbackId = "callback-1",
+                        callbackId = "callback-2",
                     ),
                     OperationRecord(
                         identity = submitterIdentity,

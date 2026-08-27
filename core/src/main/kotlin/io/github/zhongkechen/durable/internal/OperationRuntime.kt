@@ -39,7 +39,7 @@ import kotlinx.coroutines.CompletableDeferred
 internal class ExecutionSuspended(
     val operationId: String,
     val resumeAt: Instant? = null,
-) : RuntimeException("Execution suspended at operation $operationId")
+) : Error("Execution suspended at operation $operationId")
 
 /**
  * Executes operations inside one deterministic context.
@@ -233,23 +233,70 @@ internal class OperationRuntime(
         options: CallbackWaitOptions = CallbackWaitOptions(),
         submitter: suspend CallbackSubmitterScope.() -> Unit,
     ): T {
-        val callbackName = name?.let { "$it-callback" }
-        val submitterName = name?.let { "$it-submitter" }
-        val callback = callback(callbackName, type, options.callback)
-        step(
-            name = submitterName,
-            type = typeRef<Unit>(),
-            options = options.submitter,
-        ) {
-            submitter(
-                CallbackSubmitterScopeImpl(
-                    callback.id,
-                    attempt,
-                    DurableLogger(executionArn, null, submitterName, attempt),
-                ),
+        val identity = reserve(name, OperationKind.CONTEXT, "WaitForCallback")
+        val existing = ledger.find(identity)
+        if (existing?.status == CheckpointStatus.SUCCEEDED) {
+            return decodeResult(existing, type, options.callback.serde)
+        }
+        if (existing != null && existing.status.terminal) {
+            throw CallbackFailureException(
+                identity.id,
+                RuntimeException(existing.error?.message ?: "Checkpointed callback wait failure"),
             )
         }
-        return callback.await()
+        if (existing == null) {
+            checkpoints.checkpoint(CheckpointCommand(identity, CheckpointAction.START))
+        }
+
+        val childRuntime =
+            OperationRuntime(
+                executionArn = executionArn,
+                isReplaying = existing != null,
+                ledger = ledger,
+                checkpoints = checkpoints,
+                parentId = identity.id,
+                ids = OperationIdSequence(identity.id),
+                defaultSerde = defaultSerde,
+            )
+        return try {
+            val callback = childRuntime.callback(null, type, options.callback)
+            childRuntime.step(
+                name = null,
+                type = typeRef<Unit>(),
+                options = options.submitter,
+            ) {
+                submitter(
+                    CallbackSubmitterScopeImpl(
+                        callback.id,
+                        attempt,
+                        DurableLogger(executionArn, identity.id, name, attempt),
+                    ),
+                )
+            }
+            val result = callback.await()
+            val serde = options.callback.serde ?: defaultSerde
+            val payload = serde.encode(result)
+            val normalized = serde.decode(payload, type)
+            checkpoints.checkpoint(
+                CheckpointCommand(
+                    identity = identity,
+                    action = CheckpointAction.SUCCEED,
+                    payload = payload,
+                ),
+            )
+            normalized
+        } catch (suspension: ExecutionSuspended) {
+            throw suspension
+        } catch (error: Throwable) {
+            checkpoints.checkpoint(
+                CheckpointCommand(
+                    identity = identity,
+                    action = CheckpointAction.FAIL,
+                    error = error.toCheckpointError(),
+                ),
+            )
+            throw CallbackFailureException(identity.id, error)
+        }
     }
 
     suspend fun <T> waitForCondition(

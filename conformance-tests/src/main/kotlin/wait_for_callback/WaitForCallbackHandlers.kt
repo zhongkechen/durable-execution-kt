@@ -1,124 +1,180 @@
-// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0
 package wait_for_callback
 
-import java.time.Duration
+import io.github.zhongkechen.durable.CallbackFailureException
+import io.github.zhongkechen.durable.CallbackOptions
+import io.github.zhongkechen.durable.CallbackWaitOptions
+import io.github.zhongkechen.durable.DurableContext
+import io.github.zhongkechen.durable.DurableHandler
+import io.github.zhongkechen.durable.DurableRuntimeConfig
+import io.github.zhongkechen.durable.RetryPolicy
+import io.github.zhongkechen.durable.StepOptions
+import io.github.zhongkechen.durable.child
+import io.github.zhongkechen.durable.step
+import io.github.zhongkechen.durable.typeRef
 import kotlin.time.Duration.Companion.seconds
-import software.amazon.lambda.durable.execution.SuspendExecutionException
-import software.amazon.lambda.durable.kotlin.KotlinDurableContext
-import software.amazon.lambda.durable.kotlin.KotlinDurableHandler
-import software.amazon.lambda.durable.kotlin.RetryPolicy
 
-public class WaitForCallbackBasic : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.waitForCallback(input) {}
+public class WaitForCallbackBasic(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.waitForCallback(input, typeRef()) {}
 }
 
-public class WaitForCallbackExplicitName : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String =
-        context.waitForCallback("approval") {}
+public class WaitForCallbackExplicitName(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String =
+        context.waitForCallback("approval", typeRef()) {}
 }
 
-public class WaitForCallbackAnonymous : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String =
-        context.waitForCallback(null) {}
+public class WaitForCallbackAnonymous(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String =
+        context.waitForCallback(null, typeRef()) {}
 }
 
-public class WaitForCallbackExternalFailure : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.waitForCallback(input) {}
+public class WaitForCallbackExternalFailure(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.waitForCallback(input, typeRef()) {}
 }
 
-public class WaitForCallbackTimeout : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
+public class WaitForCallbackTimeout(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
         context.waitForCallback(
             name = input,
-            timeout = 3.seconds,
+            type = typeRef(),
+            options =
+                CallbackWaitOptions(
+                    callback = CallbackOptions(timeout = 3.seconds),
+                ),
         ) {}
 }
 
-public class WaitForCallbackFailureCaught : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
+public class WaitForCallbackFailureCaught(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
         try {
-            context.waitForCallback(input) {}
-        } catch (error: SuspendExecutionException) {
-            throw error
-        } catch (_: Exception) {
+            context.waitForCallback(input, typeRef()) {}
+        } catch (_: CallbackFailureException) {
             "recovered"
         }
 }
 
-public class WaitForCallbackSubmitterRetryExhaustion : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
+public class WaitForCallbackSubmitterRetryExhaustion(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
         context.waitForCallback(
             name = input,
-            submitterRetry = RetryPolicy.fixed(maxAttempts = 2, delay = 1.seconds),
+            type = typeRef(),
+            options =
+                CallbackWaitOptions(
+                    submitter =
+                        StepOptions(
+                            retry = RetryPolicy.fixed(maxAttempts = 2, delay = 1.seconds),
+                        ),
+                ),
         ) {
             error("submitter always fails")
         }
 }
 
-public class WaitForCallbackInChildContext : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("wrapper") {
-            waitForCallback(input) {}
+public class WaitForCallbackInChildContext(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child("wrapper") {
+            waitForCallback(input, typeRef()) {}
         }
 }
 
-public class WaitForCallbackTwoSequential : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String {
-        context.waitForCallback<String>("first") {}
-        return context.waitForCallback("second") {}
+public class WaitForCallbackTwoSequential(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String {
+        context.waitForCallback("first", typeRef<String>()) {}
+        return context.waitForCallback("second", typeRef()) {}
     }
 }
 
-public class WaitForCallbackMixedOps : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        context.wait(Duration.ofSeconds(1))
+public class WaitForCallbackMixedOps(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        context.wait(1.seconds)
         context.step<String>(null) { "fixed-data" }
-        return context.waitForCallback(input) {}
+        return context.waitForCallback(input, typeRef()) {}
     }
 }
 
-public class WaitForCallbackJsonResult : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+public class WaitForCallbackJsonResult(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
         val result =
-            context.waitForCallback<Map<String, String>>(name = input) {}
+            context.waitForCallback(
+                name = input,
+                type = typeRef<Map<String, String>>(),
+            ) {}
         return requireNotNull(result["status"])
     }
 }
 
-public class WaitForCallbackHeartbeatTimeout : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
+public class WaitForCallbackHeartbeatTimeout(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
         context.waitForCallback(
             name = input,
-            heartbeatTimeout = 5.seconds,
+            type = typeRef(),
+            options =
+                CallbackWaitOptions(
+                    callback = CallbackOptions(heartbeatTimeout = 5.seconds),
+                ),
         ) {}
 }
 
-public class WaitForCallbackHeartbeatThenSuccess : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
+public class WaitForCallbackHeartbeatThenSuccess(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
         context.waitForCallback(
             name = input,
-            heartbeatTimeout = 10.seconds,
+            type = typeRef(),
+            options =
+                CallbackWaitOptions(
+                    callback = CallbackOptions(heartbeatTimeout = 10.seconds),
+                ),
         ) {}
 }
 
-public class WaitForCallbackTimeoutCaught : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
+public class WaitForCallbackTimeoutCaught(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
         try {
-            context.waitForCallback<String>(
+            context.waitForCallback(
                 name = input,
-                timeout = 3.seconds,
+                type = typeRef<String>(),
+                options =
+                    CallbackWaitOptions(
+                        callback = CallbackOptions(timeout = 3.seconds),
+                    ),
             ) {}
-        } catch (error: SuspendExecutionException) {
-            throw error
-        } catch (_: Exception) {
+        } catch (_: CallbackFailureException) {
             "timed-out-handled"
         }
 }
 
-public class WaitForCallbackNullResult : KotlinDurableHandler<String, Any?>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): Any? =
-        context.waitForCallback<Any?>(input) {}
+public class WaitForCallbackNullResult(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, Any?>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): Any? =
+        context.waitForCallback(input, typeRef()) {}
 }
