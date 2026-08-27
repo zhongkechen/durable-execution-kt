@@ -37,6 +37,7 @@ import java.time.Instant
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 
 internal class ExecutionSuspended(
     val operationId: String,
@@ -68,6 +69,7 @@ internal class OperationRuntime(
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         val attempt = (existing?.attempt ?: 0) + 1
+        var startCheckpoint: Deferred<Unit>? = null
 
         when (existing?.status) {
             CheckpointStatus.SUCCEEDED ->
@@ -91,15 +93,20 @@ internal class OperationRuntime(
             }
             CheckpointStatus.READY,
             null,
-            -> checkpoints.checkpoint(
-                CheckpointCommand(identity, CheckpointAction.START),
-            )
+            -> {
+                val command = CheckpointCommand(identity, CheckpointAction.START)
+                if (options.delivery == DeliverySemantics.AT_MOST_ONCE_PER_RETRY) {
+                    checkpoints.checkpoint(command)
+                } else {
+                    startCheckpoint = checkpoints.checkpointAsync(command)
+                }
+            }
             CheckpointStatus.UNKNOWN ->
                 error("Operation ${identity.id} has an unsupported checkpoint status")
         }
 
-        return try {
-            val value =
+        val value =
+            try {
                 runUserFunction(identity, attempt, replayingChildren = false) {
                     block(
                         StepScopeImpl(
@@ -108,22 +115,24 @@ internal class OperationRuntime(
                         ),
                     )
                 }
-            val serde = options.serde ?: defaultSerde
-            val payload = serde.encode(value)
-            val normalized = serde.decode(payload, type)
-            checkpoints.checkpoint(
-                CheckpointCommand(
-                    identity = identity,
-                    action = CheckpointAction.SUCCEED,
-                    payload = payload,
-                ),
-            )
-            normalized
-        } catch (suspension: ExecutionSuspended) {
-            throw suspension
-        } catch (error: Throwable) {
-            failStep(identity, error, attempt, options)
-        }
+            } catch (suspension: ExecutionSuspended) {
+                throw suspension
+            } catch (error: Throwable) {
+                return failStep(identity, error, attempt, options, startCheckpoint)
+            }
+
+        val serde = options.serde ?: defaultSerde
+        val payload = serde.encode(value)
+        val normalized = serde.decode(payload, type)
+        checkpoints.checkpoint(
+            CheckpointCommand(
+                identity = identity,
+                action = CheckpointAction.SUCCEED,
+                payload = payload,
+            ),
+        )
+        startCheckpoint?.await()
+        return normalized
     }
 
     suspend fun wait(
@@ -231,6 +240,7 @@ internal class OperationRuntime(
             type = type,
             serde = options.serde ?: defaultSerde,
             ledger = ledger,
+            terminalWhenObserved = existing.status.terminal,
         )
     }
 
@@ -281,6 +291,9 @@ internal class OperationRuntime(
                         DurableLogger(executionArn, identity.id, name, attempt),
                     ),
                 )
+            }
+            if (!(callback as RuntimeCallback<T>).terminalWhenObserved) {
+                throw ExecutionSuspended(callback.operationId)
             }
             val result = callback.await()
             val serde = options.callback.serde ?: defaultSerde
@@ -732,6 +745,7 @@ internal class OperationRuntime(
         error: Throwable,
         attempt: Int,
         options: StepOptions,
+        startCheckpoint: Deferred<Unit>? = null,
     ): T =
         when (val decision = options.retry.decide(error, attempt)) {
             RetryDecision.Fail -> {
@@ -742,6 +756,7 @@ internal class OperationRuntime(
                         error = error.toCheckpointError(),
                     ),
                 )
+                startCheckpoint?.await()
                 throw StepFailureException(identity.id, error)
             }
             is RetryDecision.Retry -> {
@@ -755,6 +770,7 @@ internal class OperationRuntime(
                         retryDelay = delay,
                     ),
                 )
+                startCheckpoint?.await()
                 throw ExecutionSuspended(identity.id, resumeAt)
             }
         }
@@ -1008,7 +1024,11 @@ private class RuntimeCallback<T>(
     private val type: TypeRef<T>,
     private val serde: Serde,
     private val ledger: ReplayLedger,
+    internal val terminalWhenObserved: Boolean,
 ) : CallbackHandle<T> {
+    internal val operationId: String
+        get() = identity.id
+
     override suspend fun await(): T {
         val record = ledger.snapshot()[identity.id]
             ?: error("Callback ${identity.id} is missing from checkpoint state")

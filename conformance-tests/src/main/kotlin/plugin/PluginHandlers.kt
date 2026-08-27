@@ -448,7 +448,7 @@ private class WaitHooksPlugin : ArnPlugin() {
 
 private class ParentLinkPlugin : ArnPlugin() {
     override fun operationEnded(operation: OperationSnapshot) {
-        if (operation.isStep()) {
+        if (operation.isStep() || operation.isContext()) {
             fields(
                 "plugin" to "CONFPLUGIN",
                 "hook" to "operation-end",

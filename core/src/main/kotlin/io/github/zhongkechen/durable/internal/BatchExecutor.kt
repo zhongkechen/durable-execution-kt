@@ -4,12 +4,11 @@ import io.github.zhongkechen.durable.BatchCompletion
 import io.github.zhongkechen.durable.CompletionPolicy
 import io.github.zhongkechen.durable.ItemResult
 import java.util.concurrent.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 
 internal data class BatchWork<T>(
     val index: Int,
@@ -23,11 +22,15 @@ internal data class BatchOutcome<T>(
 )
 
 private sealed interface BatchSignal<out T> {
+    val index: Int
+
     data class Completed<T>(
+        override val index: Int,
         val result: ItemResult<T>,
     ) : BatchSignal<T>
 
     data class Suspended(
+        override val index: Int,
         val error: ExecutionSuspended,
     ) : BatchSignal<Nothing>
 }
@@ -41,16 +44,20 @@ internal suspend fun <T> executeBatch(
     require(maximumConcurrency >= 1) { "maximumConcurrency must be positive" }
 
     return supervisorScope {
-        val semaphore = Semaphore(maximumConcurrency)
         val completed = Channel<BatchSignal<T>>(Channel.UNLIMITED)
         val results = arrayOfNulls<ItemResult<T>>(work.size)
-        val jobs =
-            work.map { item ->
+        val active = mutableMapOf<Int, Job>()
+        var nextIndex = 0
+
+        fun startNext() {
+            val item = work[nextIndex++]
+            active[item.index] =
                 launch {
                     val signal =
                         try {
                             BatchSignal.Completed(
-                                semaphore.withPermit {
+                                index = item.index,
+                                result =
                                     try {
                                         ItemResult.Success(item.index, item.name, item.execute())
                                     } catch (suspension: ExecutionSuspended) {
@@ -59,15 +66,16 @@ internal suspend fun <T> executeBatch(
                                         throw cancelled
                                     } catch (error: Throwable) {
                                         ItemResult.Failure(item.index, item.name, error)
-                                    }
-                                },
+                                    },
                             )
                         } catch (suspension: ExecutionSuspended) {
-                            BatchSignal.Suspended(suspension)
+                            BatchSignal.Suspended(item.index, suspension)
                         }
                     completed.send(signal)
                 }
-            }
+        }
+
+        repeat(minOf(maximumConcurrency, work.size)) { startNext() }
 
         var completion = BatchCompletion.ALL_COMPLETED
         var received = 0
@@ -77,13 +85,16 @@ internal suspend fun <T> executeBatch(
             while (received < work.size && !stop) {
                 when (val signal = completed.receive()) {
                     is BatchSignal.Suspended -> {
+                        active.remove(signal.index)
                         suspended = true
                         throw signal.error
                     }
                     is BatchSignal.Completed -> {
+                        active.remove(signal.index)
                         val result = signal.result
                         results[result.index] = result
                         received += 1
+
                         val successes = results.count { it is ItemResult.Success<*> }
                         val failures = results.count { it is ItemResult.Failure }
                         stop =
@@ -132,13 +143,14 @@ internal suspend fun <T> executeBatch(
                                     }
                                 }
                             }
-                        }
+
+                        if (!stop && nextIndex < work.size) startNext()
                     }
                 }
             }
-        finally {
-            if (stop || suspended) jobs.forEach { if (it.isActive) it.cancel() }
-            jobs.joinAll()
+        } finally {
+            if (stop || suspended) active.values.forEach { if (it.isActive) it.cancel() }
+            active.values.joinAll()
             completed.close()
         }
 

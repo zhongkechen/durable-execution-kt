@@ -206,12 +206,14 @@ private fun invocationEnd(
         result = result,
     )
 
-private fun Throwable.toEngineError(): CheckpointError =
-    CheckpointError(
-        type = this::class.qualifiedName,
-        message = message,
+private fun Throwable.toEngineError(): CheckpointError {
+    val source = generateSequence(this) { it.cause }.last()
+    return CheckpointError(
+        type = source::class.qualifiedName,
+        message = source.message,
         stack =
-            stackTrace.map {
+            source.stackTrace.map {
                 "${it.className}|${it.methodName}|${it.fileName.orEmpty()}|${it.lineNumber}"
             },
     )
+}

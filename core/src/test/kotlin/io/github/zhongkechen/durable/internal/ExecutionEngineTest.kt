@@ -91,6 +91,32 @@ class ExecutionEngineTest {
         }
 
     @Test
+    fun `operation wrapper exposes its underlying failure at the handler boundary`() =
+        runTest {
+            val engine =
+                ExecutionEngine(
+                    service = EngineService(),
+                    serviceContext = StandardTestDispatcher(testScheduler),
+                )
+
+            val result =
+                engine.execute(
+                    request(),
+                    inputType = typeRef<Int>(),
+                    outputType = typeRef<Int>(),
+                ) { _, _ ->
+                    throw io.github.zhongkechen.durable.CallbackFailureException(
+                        "callback-id",
+                        IllegalStateException("not approved"),
+                    )
+                }
+
+            val error = assertIs<EngineResult.Failure>(result).error
+            assertEquals("not approved", error.message)
+            assertEquals(IllegalStateException::class.qualifiedName, error.type)
+        }
+
+    @Test
     fun `plugins observe invocation operation and function lifecycle with isolation`() =
         runTest {
             val events = mutableListOf<String>()

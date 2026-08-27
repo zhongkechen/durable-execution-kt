@@ -6,6 +6,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -49,9 +50,13 @@ internal class CheckpointCoordinator(
     private val worker: Job = scope.launch { processQueue() }
 
     suspend fun checkpoint(command: CheckpointCommand) {
+        checkpointAsync(command).await()
+    }
+
+    suspend fun checkpointAsync(command: CheckpointCommand): Deferred<Unit> {
         val completion = CompletableDeferred<Unit>()
         queue.send(Submission(command, completion))
-        completion.await()
+        return completion
     }
 
     suspend fun refresh(): Map<String, OperationRecord> =

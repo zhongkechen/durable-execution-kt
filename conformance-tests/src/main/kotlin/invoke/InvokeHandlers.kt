@@ -227,7 +227,7 @@ public class InvokeCustomResultSerdes(
 
         @Suppress("UNCHECKED_CAST")
         override fun <T> decode(payload: String, type: TypeRef<T>): T =
-            payload.trim('"').uppercase() as T
+            payload.uppercase() as T
     }
 }
 

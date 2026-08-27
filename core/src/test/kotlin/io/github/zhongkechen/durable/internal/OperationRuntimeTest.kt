@@ -199,6 +199,69 @@ class OperationRuntimeTest {
         }
 
     @Test
+    fun `wait for callback suspends when callback completes during submitter checkpoint`() =
+        runtimeTest { runtime, service, dispatcher ->
+            val contextIdentity =
+                rootIdentity("1", "approval", OperationKind.CONTEXT, "WaitForCallback")
+            val callbackIdentity =
+                OperationIdentity(
+                    id = OperationIdSequence(contextIdentity.id).next(),
+                    name = null,
+                    kind = OperationKind.CALLBACK,
+                    subtype = "Callback",
+                    parentId = contextIdentity.id,
+                )
+
+            assertFailsWith<ExecutionSuspended> {
+                runtime.waitForCallback(
+                    name = "approval",
+                    type = typeRef<String>(),
+                    options = CallbackWaitOptions(),
+                ) {
+                    service.force(
+                        OperationRecord(
+                            identity = callbackIdentity,
+                            status = CheckpointStatus.SUCCEEDED,
+                            resultPayload = "\"approved\"",
+                            callbackId = callbackId,
+                        ),
+                    )
+                }
+            }
+
+            assertEquals(
+                listOf(
+                    CheckpointAction.START,
+                    CheckpointAction.START,
+                    CheckpointAction.START,
+                    CheckpointAction.SUCCEED,
+                ),
+                service.commands.map { it.action },
+            )
+            assertEquals(
+                listOf(
+                    listOf(CheckpointAction.START),
+                    listOf(CheckpointAction.START),
+                    listOf(CheckpointAction.START, CheckpointAction.SUCCEED),
+                ),
+                service.requests.map { request -> request.map { it.action } },
+            )
+
+            val replayHarness = runtime(service.snapshot(), service, dispatcher)
+            assertEquals(
+                "approved",
+                replayHarness.runtime.waitForCallback(
+                    name = "approval",
+                    type = typeRef<String>(),
+                    options = CallbackWaitOptions(),
+                ) {
+                    error("completed submitter must replay without executing")
+                },
+            )
+            replayHarness.close()
+        }
+
+    @Test
     fun `map preserves input order and replays its aggregate checkpoint`() =
         runtimeTest { runtime, service, dispatcher ->
             val result =
@@ -480,6 +543,7 @@ class OperationRuntimeTest {
         initial: List<OperationRecord>,
     ) : DurableService {
         val commands = mutableListOf<CheckpointCommand>()
+        val requests = mutableListOf<List<CheckpointCommand>>()
         private val records = initial.associateByTo(linkedMapOf()) { it.identity.id }
 
         override fun checkpoint(
@@ -487,6 +551,7 @@ class OperationRuntimeTest {
             checkpointToken: String,
             commands: List<CheckpointCommand>,
         ): CheckpointReply {
+            requests += commands
             this.commands += commands
             for (command in commands) {
                 val previous = records[command.identity.id]
