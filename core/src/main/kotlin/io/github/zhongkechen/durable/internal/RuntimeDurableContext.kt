@@ -40,7 +40,7 @@ internal class RuntimeDurableContext(
         type: TypeRef<T>,
         options: StepOptions,
         block: suspend StepScope.() -> T,
-    ): T = runtime.step(name, type, options, block)
+    ): T = runtime.step(name, type, options, block = block)
 
     override suspend fun wait(
         duration: Duration,

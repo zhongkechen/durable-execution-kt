@@ -23,6 +23,15 @@ class TemplateCoverageTest {
         }
     }
 
+    @Test
+    fun invokeTemplateGrantsChainedInvocationPermission() {
+        val source = Path.of(projectDir(), "template_invoke.yaml").readText()
+        assertTrue(
+            source.contains("- lambda:InvokeFunction"),
+            "template_invoke.yaml must allow its handlers to invoke target functions",
+        )
+    }
+
     private fun templates(): List<Path> =
         Files.list(Path.of(projectDir()))
             .use { paths ->

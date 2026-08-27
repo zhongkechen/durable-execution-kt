@@ -37,6 +37,7 @@ CloudFormationLoader.add_multi_constructor("!", _cloudformation_tag)
 
 
 def extract() -> None:
+    previous = json.loads(MANIFEST.read_text())["suites"] if MANIFEST.exists() else {}
     suites: dict[str, Any] = {}
     for path in sorted(MODULE.glob("template_*.yaml")):
         suite = path.stem.removeprefix("template_")
@@ -66,6 +67,7 @@ def extract() -> None:
             functions.append(entry)
         suites[suite] = {
             "logging": "LoggingConfig" in function_globals,
+            "role_actions": previous.get(suite, {}).get("role_actions", []),
             "functions": functions,
         }
     MANIFEST.write_text(json.dumps({"suites": suites}, indent=2) + "\n")
@@ -84,7 +86,7 @@ def render_suite(name: str, suite: dict[str, Any]) -> str:
         globals_["Function"]["LoggingConfig"] = {"LogFormat": "JSON"}
 
     resources: dict[str, Any] = {
-        "DurableFunctionRole": execution_role(),
+        "DurableFunctionRole": execution_role(suite.get("role_actions", [])),
     }
     for function in suite["functions"]:
         properties: dict[str, Any] = {
@@ -136,7 +138,12 @@ def render_suite(name: str, suite: dict[str, Any]) -> str:
     )
 
 
-def execution_role() -> dict[str, Any]:
+def execution_role(additional_actions: list[str]) -> dict[str, Any]:
+    actions = [
+        "lambda:CheckpointDurableExecution",
+        "lambda:GetDurableExecutionState",
+        *additional_actions,
+    ]
     return {
         "Type": "AWS::IAM::Role",
         "Properties": {
@@ -161,10 +168,7 @@ def execution_role() -> dict[str, Any]:
                         "Statement": [
                             {
                                 "Effect": "Allow",
-                                "Action": [
-                                    "lambda:CheckpointDurableExecution",
-                                    "lambda:GetDurableExecutionState",
-                                ],
+                                "Action": actions,
                                 "Resource": "*",
                             },
                         ],

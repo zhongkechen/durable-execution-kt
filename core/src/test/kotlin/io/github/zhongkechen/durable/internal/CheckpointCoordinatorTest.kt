@@ -3,12 +3,49 @@ package io.github.zhongkechen.durable.internal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 
 class CheckpointCoordinatorTest {
+    @Test
+    fun `explicit command group stays in one service request`() =
+        runTest {
+            val service = RecordingService()
+            val coordinator =
+                CheckpointCoordinator(
+                    service = service,
+                    executionArn = "arn:test",
+                    checkpointToken = "token-0",
+                    ledger = ReplayLedger(emptyList()),
+                    coroutineContext = StandardTestDispatcher(testScheduler),
+                    batchWindow = Duration.ZERO,
+                )
+
+            val checkpoint =
+                async {
+                    coordinator.checkpoint(
+                        listOf(
+                            CheckpointCommand(identity("start"), CheckpointAction.START),
+                            CheckpointCommand(identity("finish"), CheckpointAction.SUCCEED),
+                        ),
+                    )
+                }
+            testScheduler.advanceUntilIdle()
+            checkpoint.await()
+
+            assertEquals(
+                listOf(listOf(CheckpointAction.START, CheckpointAction.SUCCEED)),
+                service.checkpoints.map { request -> request.map { it.action } },
+            )
+
+            coordinator.close()
+            testScheduler.advanceUntilIdle()
+            coordinator.join()
+        }
+
     @Test
     fun `commands are batched and checkpoint state updates the ledger`() =
         runTest {

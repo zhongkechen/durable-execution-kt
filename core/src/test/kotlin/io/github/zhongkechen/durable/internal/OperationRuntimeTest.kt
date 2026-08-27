@@ -15,6 +15,7 @@ import io.github.zhongkechen.durable.RetryPolicy
 import io.github.zhongkechen.durable.StepOptions
 import io.github.zhongkechen.durable.StepScope
 import io.github.zhongkechen.durable.typeRef
+import kotlin.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -200,7 +201,7 @@ class OperationRuntimeTest {
 
     @Test
     fun `wait for callback suspends when callback completes during submitter checkpoint`() =
-        runtimeTest { runtime, service, dispatcher ->
+        runtimeTest(batchWindow = Duration.ZERO) { runtime, service, dispatcher ->
             val contextIdentity =
                 rootIdentity("1", "approval", OperationKind.CONTEXT, "WaitForCallback")
             val callbackIdentity =
@@ -465,11 +466,12 @@ class OperationRuntimeTest {
 
     private fun runtimeTest(
         initial: List<OperationRecord> = emptyList(),
+        batchWindow: Duration = 1.milliseconds,
         block: suspend (OperationRuntime, RuntimeService, TestDispatcher) -> Unit,
     ) = runTest {
         val service = RuntimeService(initial)
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val harness = runtime(initial, service, dispatcher)
+        val harness = runtime(initial, service, dispatcher, batchWindow)
         try {
             block(harness.runtime, service, dispatcher)
         } finally {
@@ -481,6 +483,7 @@ class OperationRuntimeTest {
         initial: List<OperationRecord>,
         service: RuntimeService,
         dispatcher: TestDispatcher,
+        batchWindow: Duration = 1.milliseconds,
     ): RuntimeHarness {
         val ledger = ReplayLedger(initial)
         val coordinator =
@@ -490,7 +493,7 @@ class OperationRuntimeTest {
                 checkpointToken = "token-0",
                 ledger = ledger,
                 coroutineContext = dispatcher,
-                batchWindow = 1.milliseconds,
+                batchWindow = batchWindow,
             )
         return RuntimeHarness(
             runtime =

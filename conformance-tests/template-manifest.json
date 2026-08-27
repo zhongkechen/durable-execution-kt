@@ -456,6 +456,9 @@
     },
     "invoke": {
       "logging": false,
+      "role_actions": [
+        "lambda:InvokeFunction"
+      ],
       "functions": [
         {
           "id": "TargetEcho",

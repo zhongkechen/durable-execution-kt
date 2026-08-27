@@ -63,6 +63,7 @@ internal class OperationRuntime(
         name: String?,
         type: TypeRef<T>,
         options: StepOptions = StepOptions(),
+        combineStartAndTerminal: Boolean = false,
         block: suspend StepScope.() -> T,
     ): T {
         val identity = reserve(name, OperationKind.STEP, "Step")
@@ -70,6 +71,7 @@ internal class OperationRuntime(
         notifyObserved(identity, existing)
         val attempt = (existing?.attempt ?: 0) + 1
         var startCheckpoint: Deferred<Unit>? = null
+        var startCommand: CheckpointCommand? = null
 
         when (existing?.status) {
             CheckpointStatus.SUCCEEDED ->
@@ -97,6 +99,8 @@ internal class OperationRuntime(
                 val command = CheckpointCommand(identity, CheckpointAction.START)
                 if (options.delivery == DeliverySemantics.AT_MOST_ONCE_PER_RETRY) {
                     checkpoints.checkpoint(command)
+                } else if (combineStartAndTerminal) {
+                    startCommand = command
                 } else {
                     startCheckpoint = checkpoints.checkpointAsync(command)
                 }
@@ -118,13 +122,21 @@ internal class OperationRuntime(
             } catch (suspension: ExecutionSuspended) {
                 throw suspension
             } catch (error: Throwable) {
-                return failStep(identity, error, attempt, options, startCheckpoint)
+                return failStep(
+                    identity,
+                    error,
+                    attempt,
+                    options,
+                    startCheckpoint,
+                    startCommand,
+                )
             }
 
         val serde = options.serde ?: defaultSerde
         val payload = serde.encode(value)
         val normalized = serde.decode(payload, type)
-        checkpoints.checkpoint(
+        checkpointTerminal(
+            startCommand,
             CheckpointCommand(
                 identity = identity,
                 action = CheckpointAction.SUCCEED,
@@ -283,6 +295,7 @@ internal class OperationRuntime(
                 name = null,
                 type = typeRef<Unit>(),
                 options = options.submitter,
+                combineStartAndTerminal = true,
             ) {
                 submitter(
                     CallbackSubmitterScopeImpl(
@@ -746,10 +759,12 @@ internal class OperationRuntime(
         attempt: Int,
         options: StepOptions,
         startCheckpoint: Deferred<Unit>? = null,
+        startCommand: CheckpointCommand? = null,
     ): T =
         when (val decision = options.retry.decide(error, attempt)) {
             RetryDecision.Fail -> {
-                checkpoints.checkpoint(
+                checkpointTerminal(
+                    startCommand,
                     CheckpointCommand(
                         identity = identity,
                         action = CheckpointAction.FAIL,
@@ -762,7 +777,8 @@ internal class OperationRuntime(
             is RetryDecision.Retry -> {
                 val delay = maxOf(decision.delay, 1.seconds)
                 val resumeAt = Instant.now().plusMillis(delay.inWholeMilliseconds)
-                checkpoints.checkpoint(
+                checkpointTerminal(
+                    startCommand,
                     CheckpointCommand(
                         identity = identity,
                         action = CheckpointAction.RETRY,
@@ -774,6 +790,17 @@ internal class OperationRuntime(
                 throw ExecutionSuspended(identity.id, resumeAt)
             }
         }
+
+    private suspend fun checkpointTerminal(
+        start: CheckpointCommand?,
+        terminal: CheckpointCommand,
+    ) {
+        if (start == null) {
+            checkpoints.checkpoint(terminal)
+        } else {
+            checkpoints.checkpoint(listOf(start, terminal))
+        }
+    }
 
     private fun <T> decodeResult(
         record: OperationRecord,

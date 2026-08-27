@@ -38,7 +38,7 @@ internal class CheckpointCoordinator(
     ) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     private data class Submission(
-        val command: CheckpointCommand,
+        val commands: List<CheckpointCommand>,
         val completion: CompletableDeferred<Unit>,
     )
 
@@ -53,9 +53,18 @@ internal class CheckpointCoordinator(
         checkpointAsync(command).await()
     }
 
+    suspend fun checkpoint(commands: List<CheckpointCommand>) {
+        require(commands.isNotEmpty()) { "A checkpoint batch must contain at least one command" }
+        submit(commands).await()
+    }
+
     suspend fun checkpointAsync(command: CheckpointCommand): Deferred<Unit> {
+        return submit(listOf(command))
+    }
+
+    private suspend fun submit(commands: List<CheckpointCommand>): Deferred<Unit> {
         val completion = CompletableDeferred<Unit>()
-        queue.send(Submission(command, completion))
+        queue.send(Submission(commands, completion))
         return completion
     }
 
@@ -100,24 +109,28 @@ internal class CheckpointCoordinator(
                 val first = carry ?: queue.receiveCatching().getOrNull() ?: break
                 carry = null
                 val batch = mutableListOf(first)
-                var estimatedBytes = estimate(first.command)
+                var commandCount = first.commands.size
+                var estimatedBytes = estimate(first.commands)
 
-                while (batch.size < maximumBatchItems) {
+                while (commandCount < maximumBatchItems) {
                     val next =
                         withTimeoutOrNull(batchWindow) {
                             queue.receiveCatching().getOrNull()
                         } ?: break
-                    val nextBytes = estimate(next.command)
-                    if (estimatedBytes + nextBytes > maximumBatchBytes) {
+                    val nextBytes = estimate(next.commands)
+                    if (commandCount + next.commands.size > maximumBatchItems ||
+                        estimatedBytes + nextBytes > maximumBatchBytes
+                    ) {
                         carry = next
                         break
                     }
                     batch += next
+                    commandCount += next.commands.size
                     estimatedBytes += nextBytes
                 }
 
                 try {
-                    send(batch.map(Submission::command))
+                    send(batch.flatMap(Submission::commands))
                     batch.forEach { it.completion.complete(Unit) }
                 } catch (error: Throwable) {
                     batch.forEach { it.completion.completeExceptionally(error) }
@@ -169,11 +182,13 @@ internal class CheckpointCoordinator(
         }
     }
 
-    private fun estimate(command: CheckpointCommand): Int =
-        command.identity.id.length +
-            command.identity.name.orEmpty().length +
-            command.identity.subtype.length +
-            command.payload.orEmpty().length +
-            command.error?.message.orEmpty().length +
-            128
+    private fun estimate(commands: List<CheckpointCommand>): Int =
+        commands.sumOf { command ->
+            command.identity.id.length +
+                command.identity.name.orEmpty().length +
+                command.identity.subtype.length +
+                command.payload.orEmpty().length +
+                command.error?.message.orEmpty().length +
+                128
+        }
 }
