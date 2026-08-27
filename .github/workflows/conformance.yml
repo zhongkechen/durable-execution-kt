@@ -94,10 +94,9 @@ jobs:
             aws cloudformation wait stack-delete-complete --stack-name "${CONFORMANCE_STACK_NAME}"
           fi
 
-      - name: Install conformance runner
+      - name: Clone conformance runner
         run: |
           git clone --depth 1 https://github.com/aws/aws-durable-execution-conformance-tests.git .conformance
-          pip install ./.conformance/packages/aws-durable-execution-conformance-tests
 
       - name: Stabilize wait-for-callback action timing
         if: matrix.suite == 'wait_for_callback'
@@ -107,6 +106,9 @@ jobs:
             -type f \
             -name '*.yaml' \
             -exec sed -i -E 's/^([[:space:]]*)Delay: 1$/\1Delay: 2/' {} +
+
+      - name: Install conformance runner
+        run: pip install ./.conformance/packages/aws-durable-execution-conformance-tests
 
       - name: Run ${{ matrix.suite }} conformance
         run: |
