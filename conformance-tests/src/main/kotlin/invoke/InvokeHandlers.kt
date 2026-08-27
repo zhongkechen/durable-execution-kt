@@ -1,25 +1,17 @@
 package invoke
 
+import io.github.zhongkechen.durable.*
+
 import com.amazonaws.services.lambda.runtime.Context
 import com.amazonaws.services.lambda.runtime.RequestHandler
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.DurableRuntimeConfig
-import io.github.zhongkechen.durable.InvokeFailureException
-import io.github.zhongkechen.durable.InvokeOptions
-import io.github.zhongkechen.durable.Serde
-import io.github.zhongkechen.durable.TypeRef
-import io.github.zhongkechen.durable.child
-import io.github.zhongkechen.durable.step
-import io.github.zhongkechen.durable.typeRef
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
 public class InvokeBasic(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Any? =
-        context.invoke("invoke-basic", target(), input, typeRef())
+    override suspend fun handle(input: Any?): Any? =
+        invoke("invoke-basic", target(), input, typeRef())
 }
 
 public class InvokeWithName(
@@ -27,9 +19,8 @@ public class InvokeWithName(
 ) : DurableHandler<Map<String, Any?>, Any?>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Map<String, Any?>,
-        context: DurableContext,
     ): Any? =
-        context.invoke(
+        invoke(
             requireNotNull(input["name"] as String?),
             target(),
             input["payload"],
@@ -40,30 +31,30 @@ public class InvokeWithName(
 public class InvokeComplexObject(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Any? =
-        context.invoke("invoke-complex", target(), input, typeRef())
+    override suspend fun handle(input: Any?): Any? =
+        invoke("invoke-complex", target(), input, typeRef())
 }
 
 public class InvokeNullResult(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Any? =
-        context.invoke("invoke-null", target(), null, typeRef())
+    override suspend fun handle(input: Any?): Any? =
+        invoke("invoke-null", target(), null, typeRef())
 }
 
 public class InvokeTargetFails(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.invoke("invoke-failing", target(), null, typeRef())
+    override suspend fun handle(input: Any?): String =
+        invoke("invoke-failing", target(), null, typeRef())
 }
 
 public class InvokeTargetFailsCaught(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
+    override suspend fun handle(input: Any?): String {
         try {
-            context.invoke("invoke-failing", target(), null, typeRef<String>())
+            invoke("invoke-failing", target(), null, typeRef<String>())
         } catch (_: InvokeFailureException) {
             // The fallback is the durable result for this handler.
         }
@@ -74,23 +65,23 @@ public class InvokeTargetFailsCaught(
 public class InvokeLargePayload(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.invoke("invoke-large", target(), "x".repeat(200_000), typeRef())
+    override suspend fun handle(input: Any?): String =
+        invoke("invoke-large", target(), "x".repeat(200_000), typeRef())
 }
 
 public class InvokeTimeout(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.invoke("invoke-slow", target(), null, typeRef())
+    override suspend fun handle(input: Any?): String =
+        invoke("invoke-slow", target(), null, typeRef())
 }
 
 public class InvokeTimeoutCaught(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
+    override suspend fun handle(input: Any?): String {
         try {
-            context.invoke("invoke-slow", target(), null, typeRef<String>())
+            invoke("invoke-slow", target(), null, typeRef<String>())
         } catch (_: InvokeFailureException) {
             // Continue after the checkpointed timeout.
         }
@@ -103,9 +94,8 @@ public class InvokeWithTenantId(
 ) : DurableHandler<Map<String, String>, String>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Map<String, String>,
-        context: DurableContext,
     ): String =
-        context.invoke(
+        invoke(
             name = "invoke-tenant",
             functionName = target(),
             input = input["payload"],
@@ -117,9 +107,9 @@ public class InvokeWithTenantId(
 public class InvokeReplaySkips(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        val result = context.invoke("invoke-target", target(), null, typeRef<String>())
-        context.wait(1.seconds)
+    override suspend fun handle(input: Any?): String {
+        val result = invoke("invoke-target", target(), null, typeRef<String>())
+        wait(1.seconds)
         return result
     }
 }
@@ -127,13 +117,13 @@ public class InvokeReplaySkips(
 public class InvokeReplayRethrows(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
+    override suspend fun handle(input: Any?): String {
         try {
-            context.invoke("invoke-failing", target(), null, typeRef<String>())
+            invoke("invoke-failing", target(), null, typeRef<String>())
         } catch (_: InvokeFailureException) {
             // Initial execution and replay both observe the same checkpointed error.
         }
-        context.wait(1.seconds)
+        wait(1.seconds)
         return "done"
     }
 }
@@ -141,26 +131,26 @@ public class InvokeReplayRethrows(
 public class StepThenInvoke(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        val stepResult = context.step<String>("compute") { "step-data" }
-        return context.invoke("invoke-with-step", target(), stepResult, typeRef())
+    override suspend fun handle(input: Any?): String {
+        val stepResult = step<String>("compute") { "step-data" }
+        return invoke("invoke-with-step", target(), stepResult, typeRef())
     }
 }
 
 public class InvokeThenStep(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        val invokeResult = context.invoke("invoke-target", target(), null, typeRef<String>())
-        return context.step("process") { "processed: $invokeResult" }
+    override suspend fun handle(input: Any?): String {
+        val invokeResult = invoke("invoke-target", target(), null, typeRef<String>())
+        return step("process") { "processed: $invokeResult" }
     }
 }
 
 public class InvokeInChildContext(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.child("child-invoke") {
+    override suspend fun handle(input: Any?): String =
+        runInChildContext("child-invoke") {
             invoke("invoke-in-child", target(), null, typeRef<String>())
         }
 }
@@ -170,17 +160,16 @@ public class InvokeMultipleSequential(
 ) : DurableHandler<Map<String, Any?>, String>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Map<String, Any?>,
-        context: DurableContext,
     ): String {
         val first =
-            context.invoke(
+            invoke(
                 "invoke-first",
                 requireEnv("TARGET_FUNCTION_NAME_1"),
                 null,
                 typeRef<String>(),
             )
         val second =
-            context.invoke(
+            invoke(
                 "invoke-second",
                 requireEnv("TARGET_FUNCTION_NAME_2"),
                 null,
@@ -193,8 +182,8 @@ public class InvokeMultipleSequential(
 public class InvokeCustomPayloadSerdes(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.invoke(
+    override suspend fun handle(input: Any?): String =
+        invoke(
             name = "invoke-custom-payload",
             functionName = target(),
             input = "hello",
@@ -213,8 +202,8 @@ public class InvokeCustomPayloadSerdes(
 public class InvokeCustomResultSerdes(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.invoke(
+    override suspend fun handle(input: Any?): String =
+        invoke(
             name = "invoke-custom-result",
             functionName = target(),
             input = input,
@@ -234,8 +223,8 @@ public class InvokeCustomResultSerdes(
 public class TargetEcho(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Any? {
-        context.wait(1.seconds)
+    override suspend fun handle(input: Any?): Any? {
+        wait(1.seconds)
         return input
     }
 }
@@ -243,8 +232,8 @@ public class TargetEcho(
 public class TargetError(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.wait(1.seconds)
+    override suspend fun handle(input: Any?): String {
+        wait(1.seconds)
         error("Target function error")
     }
 }
@@ -252,7 +241,7 @@ public class TargetError(
 public class TargetSlow(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
+    override suspend fun handle(input: Any?): String {
         delay(60_000)
         return "should-not-reach"
     }

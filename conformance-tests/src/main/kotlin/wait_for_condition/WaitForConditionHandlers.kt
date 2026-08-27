@@ -1,29 +1,21 @@
 package wait_for_condition
 
-import io.github.zhongkechen.durable.ConditionDecision
-import io.github.zhongkechen.durable.ConditionFailureException
-import io.github.zhongkechen.durable.ConditionOptions
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.DurableRuntimeConfig
-import io.github.zhongkechen.durable.Serde
-import io.github.zhongkechen.durable.TypeRef
-import io.github.zhongkechen.durable.step
-import io.github.zhongkechen.durable.typeRef
+import io.github.zhongkechen.durable.*
+
 import kotlin.time.Duration.Companion.seconds
 
 public class WaitForConditionBasic(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Int, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Int, context: DurableContext): Int =
-        poll(context, input, initial = 0)
+    override suspend fun handle(input: Int): Int =
+        poll(input, initial = 0)
 }
 
 public class WaitForConditionImmediate(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Int, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Int, context: DurableContext): Int =
-        context.waitForCondition(
+    override suspend fun handle(input: Int): Int =
+        waitForCondition(
             name = null,
             type = typeRef(),
             options = integerOptions(input),
@@ -36,22 +28,22 @@ public class WaitForConditionImmediate(
 public class WaitForConditionNamed(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Int, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Int, context: DurableContext): Int =
-        poll(context, input, initial = 0, name = "poll-status")
+    override suspend fun handle(input: Int): Int =
+        poll(input, initial = 0, name = "poll-status")
 }
 
 public class WaitForConditionInitialState(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Int, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Int, context: DurableContext): Int =
-        poll(context, input, initial = 5)
+    override suspend fun handle(input: Int): Int =
+        poll(input, initial = 5)
 }
 
 public class WaitForConditionFixedDelay(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Int, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Int, context: DurableContext): Int =
-        context.waitForCondition(
+    override suspend fun handle(input: Int): Int =
+        waitForCondition(
             name = null,
             type = typeRef(),
             options =
@@ -70,8 +62,8 @@ public class WaitForConditionFixedDelay(
 public class WaitForConditionMaxAttempts(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Int =
-        context.waitForCondition(
+    override suspend fun handle(input: Any?): Int =
+        waitForCondition(
             name = null,
             type = typeRef(),
             options =
@@ -88,8 +80,8 @@ public class WaitForConditionMaxAttempts(
 public class WaitForConditionCheckThrows(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Any? =
-        context.waitForCondition(
+    override suspend fun handle(input: Any?): Any? =
+        waitForCondition(
             name = null,
             type = typeRef(),
             options = ConditionOptions<Any?>(delay = { _, _ -> 1.seconds }),
@@ -101,9 +93,9 @@ public class WaitForConditionCheckThrows(
 public class WaitForConditionCheckThrowsCaught(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
+    override suspend fun handle(input: Any?): String =
         try {
-            context.waitForCondition(
+            waitForCondition(
                 name = null,
                 type = typeRef(),
                 options = ConditionOptions<Any?>(delay = { _, _ -> 1.seconds }),
@@ -121,9 +113,8 @@ public class WaitForConditionComplexObject(
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Any?,
-        context: DurableContext,
     ): Map<String, Any> =
-        context.waitForCondition(
+        waitForCondition(
             name = null,
             type = typeRef(),
             options =
@@ -146,8 +137,8 @@ public class WaitForConditionComplexObject(
 public class WaitForConditionNullResult(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Any? =
-        context.waitForCondition(
+    override suspend fun handle(input: Any?): Any? =
+        waitForCondition(
             name = null,
             type = typeRef(),
             options = ConditionOptions<Any?>(delay = { _, _ -> 1.seconds }),
@@ -159,8 +150,8 @@ public class WaitForConditionNullResult(
 public class WaitForConditionCustomSerdes(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.waitForCondition(
+    override suspend fun handle(input: Any?): String =
+        waitForCondition(
             name = null,
             type = typeRef(),
             options =
@@ -187,28 +178,27 @@ public class WaitForConditionCustomSerdes(
 public class WaitForConditionThenStep(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Int, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Int, context: DurableContext): Int {
-        val result = poll(context, input, initial = 0)
-        return context.step(null) { result * 10 }
+    override suspend fun handle(input: Int): Int {
+        val result = poll(input, initial = 0)
+        return step(null) { result * 10 }
     }
 }
 
 public class WaitForConditionMultipleSequential(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Int>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Int {
-        val first = poll(context, target = 2, initial = 0)
-        return poll(context, target = 4, initial = first)
+    override suspend fun handle(input: Any?): Int {
+        val first = poll(target = 2, initial = 0)
+        return poll(target = 4, initial = first)
     }
 }
 
 private suspend fun poll(
-    context: DurableContext,
     target: Int,
     initial: Int,
     name: String? = null,
 ): Int =
-    context.waitForCondition(
+    waitForCondition(
         name = name,
         type = typeRef(),
         options = integerOptions(initial),

@@ -1,6 +1,5 @@
 package io.github.zhongkechen.durable.internal
 
-import io.github.zhongkechen.durable.DurableContext
 import io.github.zhongkechen.durable.DurablePlugin
 import io.github.zhongkechen.durable.ExecutionStatus
 import io.github.zhongkechen.durable.InvocationEnded
@@ -55,7 +54,7 @@ internal class ExecutionEngine(
         request: InvocationRequest,
         inputType: TypeRef<I>,
         outputType: TypeRef<O>,
-        handler: suspend (I, DurableContext) -> O,
+        handler: suspend (I) -> O,
     ): EngineResult {
         val ledger = ReplayLedger(request.initialOperations, request.updatedOperationIds)
         val firstInvocation =
@@ -123,9 +122,12 @@ internal class ExecutionEngine(
                 checkpoints = checkpoints,
                 defaultSerde = serde,
                 plugins = plugins,
-            )
+        )
         return try {
-            val result = handler(input, RuntimeDurableContext(runtime))
+            val result =
+                withRuntime(runtime) {
+                    handler(input)
+                }
             val payload = serde.encode(result)
             serde.decode(payload, outputType)
             EngineResult.Success(payload).also {

@@ -1,40 +1,30 @@
 package step
 
-import io.github.zhongkechen.durable.DeliverySemantics
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.DurableRuntimeConfig
-import io.github.zhongkechen.durable.RetryDecision
-import io.github.zhongkechen.durable.RetryJitter
-import io.github.zhongkechen.durable.RetryPolicy
-import io.github.zhongkechen.durable.Serde
-import io.github.zhongkechen.durable.StepOptions
-import io.github.zhongkechen.durable.TypeRef
-import io.github.zhongkechen.durable.step
-import io.github.zhongkechen.durable.typeRef
+import io.github.zhongkechen.durable.*
+
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
 public class StepBasic(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") { "Hello, $input!" }
+    override suspend fun handle(input: String): String =
+        step("greet") { "Hello, $input!" }
 }
 
 public class StepWithName(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("custom_step_name") { "Hello, $input!" }
+    override suspend fun handle(input: String): String =
+        step("custom_step_name") { "Hello, $input!" }
 }
 
 public class StepNested(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        val first = context.step<String>("step-one") { "first" }
-        return context.step("step-two") { "${first}_second" }
+    override suspend fun handle(input: Any?): String {
+        val first = step<String>("step-one") { "first" }
+        return step("step-two") { "${first}_second" }
     }
 }
 
@@ -44,9 +34,8 @@ public class StepComplexObject(
     @Suppress("UNCHECKED_CAST")
     override suspend fun handle(
         input: Map<String, Any?>,
-        context: DurableContext,
     ): Map<String, Any?> =
-        context.step("build-response") {
+        step("build-response") {
             val tags = input["tags"] as List<String>
             mapOf(
                 "user" to
@@ -62,15 +51,15 @@ public class StepComplexObject(
 public class StepNullResult(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Any? =
-        context.step<Any?>("do-nothing") { null }
+    override suspend fun handle(input: Any?): Any? =
+        step<Any?>("do-nothing") { null }
 }
 
 public class StepCustomSerdes(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: String): String =
+        step(
             name = "uppercase",
             options = StepOptions(serde = UppercaseSerde),
         ) {
@@ -88,8 +77,8 @@ public class StepCustomSerdes(
 public class StepLogging(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") {
+    override suspend fun handle(input: String): String =
+        step("greet") {
             logger.info("Greeting step started for: {}", input)
             val greeting = "Hello, $input!"
             logger.info("Greeting step completed with: {}", greeting)
@@ -100,9 +89,9 @@ public class StepLogging(
 public class StepAndWaitReplay(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        val result = context.step<String>("compute") { "computed" }
-        context.wait(2.seconds)
+    override suspend fun handle(input: Any?): String {
+        val result = step<String>("compute") { "computed" }
+        wait(2.seconds)
         return result
     }
 }
@@ -110,13 +99,13 @@ public class StepAndWaitReplay(
 public class StepReplaySkipsSucceeded(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
+    override suspend fun handle(input: Any?): String {
         val result =
-            context.step<String>("cached-step") {
+            step<String>("cached-step") {
                 logger.info("step executed")
                 "cached_value"
             }
-        context.wait(1.seconds)
+        wait(1.seconds)
         return result
     }
 }
@@ -124,10 +113,10 @@ public class StepReplaySkipsSucceeded(
 public class StepReplayRethrowsFailed(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
+    override suspend fun handle(input: Any?): String {
         val message =
             runCatching {
-                context.step<String>(
+                step<String>(
                     name = "failing-step",
                     options = StepOptions(retry = RetryPolicy.none),
                 ) {
@@ -137,7 +126,7 @@ public class StepReplayRethrowsFailed(
             }.exceptionOrNull()
                 ?.let { it.cause?.message ?: it.message }
                 .orEmpty()
-        context.wait(1.seconds)
+        wait(1.seconds)
         return "caught: $message"
     }
 }
@@ -145,8 +134,8 @@ public class StepReplayRethrowsFailed(
 public class StepWithRetry(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "retry-step",
             options = StepOptions(retry = RetryPolicy.fixed(maxAttempts = 3, delay = 1.seconds)),
         ) {
@@ -158,8 +147,8 @@ public class StepWithRetry(
 public class StepRetryExhaustion(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "always-fails",
             options =
                 StepOptions(
@@ -180,8 +169,8 @@ public class StepRetryExhaustion(
 public class StepDefaultRetry(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step("default-retry") {
+    override suspend fun handle(input: Any?): String =
+        step("default-retry") {
             if (attempt < 3) error("Attempt $attempt failed")
             "recovered"
         }
@@ -190,8 +179,8 @@ public class StepDefaultRetry(
 public class StepRetryCustomConfig(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "custom-retry",
             options =
                 StepOptions(
@@ -213,8 +202,8 @@ public class StepRetryCustomConfig(
 public class StepRetrySpecificException(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "specific-retry",
             options =
                 StepOptions(
@@ -238,8 +227,8 @@ public class StepRetrySpecificException(
 public class StepRetryNonRetryable(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "non-retryable",
             options =
                 StepOptions(
@@ -262,8 +251,8 @@ public class StepRetryNonRetryable(
 public class StepAtMostOnceNoRetry(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "at_most_once_flaky_step",
             options =
                 StepOptions(
@@ -280,8 +269,8 @@ public class StepAtMostOnceNoRetry(
 public class StepAtMostOnceWithRetry(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "at-most-once-retry",
             options =
                 StepOptions(
@@ -301,8 +290,8 @@ public class StepAtMostOnceWithRetry(
 public class StepWithError(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             name = "failing-step",
             options = StepOptions(retry = RetryPolicy.none),
         ) {
@@ -313,16 +302,16 @@ public class StepWithError(
 public class StepErrorCaught(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
+    override suspend fun handle(input: Any?): String {
         runCatching {
-            context.step<String>(
+            step<String>(
                 name = "failing-step",
                 options = StepOptions(retry = RetryPolicy.none),
             ) {
                 error("Something went wrong")
             }
         }
-        return context.step("fallback-step") { "fallback_result" }
+        return step("fallback-step") { "fallback_result" }
     }
 }
 

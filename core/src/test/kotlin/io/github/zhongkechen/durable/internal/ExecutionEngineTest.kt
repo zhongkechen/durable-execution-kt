@@ -8,6 +8,7 @@ import io.github.zhongkechen.durable.FunctionAttemptStarted
 import io.github.zhongkechen.durable.InvocationEnded
 import io.github.zhongkechen.durable.InvocationStarted
 import io.github.zhongkechen.durable.OperationSnapshot
+import io.github.zhongkechen.durable.wait
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -33,8 +34,8 @@ class ExecutionEngineTest {
                     request(),
                     inputType = typeRef<Int>(),
                     outputType = typeRef<Int>(),
-                ) { input, context ->
-                    context.step("double") { input * 2 }
+                ) { input ->
+                    step("double") { input * 2 }
                 }
 
             assertEquals("42", assertIs<EngineResult.Success>(result).payload)
@@ -60,8 +61,8 @@ class ExecutionEngineTest {
                     request(),
                     inputType = typeRef<Int>(),
                     outputType = typeRef<Int>(),
-                ) { input, context ->
-                    context.wait(3.seconds, "pause")
+                ) { input ->
+                    wait(3.seconds, "pause")
                     input
                 }
 
@@ -83,7 +84,7 @@ class ExecutionEngineTest {
                     request(),
                     inputType = typeRef<Int>(),
                     outputType = typeRef<Int>(),
-                ) { _, _ ->
+                ) { _ ->
                     error("broken")
                 }
 
@@ -104,7 +105,7 @@ class ExecutionEngineTest {
                     request(),
                     inputType = typeRef<Int>(),
                     outputType = typeRef<Int>(),
-                ) { _, _ ->
+                ) { _ ->
                     throw io.github.zhongkechen.durable.CallbackFailureException(
                         "callback-id",
                         IllegalStateException("not approved"),
@@ -165,8 +166,8 @@ class ExecutionEngineTest {
                     request(),
                     inputType = typeRef<Int>(),
                     outputType = typeRef<Int>(),
-                ) { input, context ->
-                    context.step("double") { input * 2 }
+                ) { input ->
+                    step("double") { input * 2 }
                 }
 
             assertIs<EngineResult.Success>(result)

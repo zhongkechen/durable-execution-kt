@@ -2,26 +2,19 @@
 
 A coroutine-native durable workflow runtime for AWS Lambda on Java 21 or later.
 
-The implementation is written in Kotlin and exposes Kotlin-first APIs:
+The public API is context-free and Kotlin-first:
 
-- suspend handlers and operation bodies;
-- named/default arguments and Kotlin durations;
-- reified generic type helpers;
-- deterministic replay validation;
-- Java 21 virtual-thread dispatch;
-- concurrent map and parallel operations;
-- callback, invoke, retry, child-context, and condition primitives;
-- lifecycle instrumentation plugins;
-- an in-memory replay backend for tests.
+- handlers receive only their typed input;
+- durable operations are top-level suspend functions;
+- configuration uses immutable data classes with named/default arguments;
+- extension libraries compose suspend-native primitives through deterministic,
+  one-shot reservations;
+- active durable scope follows the coroutine context rather than a thread local;
+- map, parallel, callbacks, invokes, retries, child contexts, and polling share
+  the same replay engine.
 
 ```kotlin
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.MapOptions
-import io.github.zhongkechen.durable.RetryPolicy
-import io.github.zhongkechen.durable.StepOptions
-import io.github.zhongkechen.durable.step
-import io.github.zhongkechen.durable.typeRef
+import io.github.zhongkechen.durable.*
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -30,12 +23,9 @@ class OrderHandler :
         inputType = typeRef(),
         outputType = typeRef(),
     ) {
-    override suspend fun handle(
-        input: Order,
-        context: DurableContext,
-    ): OrderResult {
+    override suspend fun handle(input: Order): OrderResult {
         val reservation =
-            context.step<Reservation>(
+            step<Reservation>(
                 name = "reserve-inventory",
                 options =
                     StepOptions(
@@ -48,10 +38,10 @@ class OrderHandler :
                 inventory.reserve(input.items)
             }
 
-        context.wait(5.minutes, name = "packing-window")
+        wait(5.minutes, name = "packing-window")
 
         val shipments =
-            context.map(
+            map(
                 name = "ship-items",
                 items = input.items,
                 outputType = typeRef<Shipment>(),
@@ -67,10 +57,49 @@ class OrderHandler :
 }
 ```
 
+Child scopes and concurrent branches automatically install their own durable
+scope in the coroutine context, so the same top-level functions remain valid
+when nested.
+
+## Extension SPI
+
+Extensions reserve identities before launching work. Reservation order defines
+durable identity; launch order may differ.
+
+```kotlin
+import io.github.zhongkechen.durable.extension.*
+import io.github.zhongkechen.durable.typeRef
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+
+suspend fun paired(name: String): String = coroutineScope {
+    val extension = currentExtensionContext()
+    val left = extension.reserve("$name-left")
+    val right = extension.reserve("$name-right")
+
+    val rightResult = async {
+        right.step("PairStep", typeRef<String>()) {
+            ExtensionStepResult.Succeeded("R")
+        }
+    }
+    val leftResult = async {
+        left.step("PairStep", typeRef<String>()) {
+            ExtensionStepResult.Succeeded("L")
+        }
+    }
+
+    leftResult.await() + rightResult.await()
+}
+```
+
+The SPI uses suspend functions, sealed outcomes, Kotlin durations, and data
+classes. It does not expose builders, `CompletionStage`, raw checkpoint APIs,
+or backend operation IDs.
+
 ## Modules
 
-- `core` — public API, replay engine, checkpoint coordination, Lambda wire
-  protocol, and real backend adapter.
+- `core` — public operation facades, extension SPI, replay engine, checkpoint
+  coordination, Lambda wire protocol, and backend adapter.
 - `testing` — in-memory backend and typed local invocation runner.
 - `conformance-tests` — executable handlers and infrastructure templates for
   the shared durable-execution behavior suite.
@@ -94,17 +123,11 @@ val result = runner.runUntilComplete(input)
 
 ## Cloud conformance
 
-The cloud workflow runs automatically for same-repository pull requests and
-pushes to `main`. Each suite reuses one persistent stack across every branch
-and run. Deployments are globally serialized and limited to two suites at a
-time.
-
-Manual execution remains available for either one suite or the complete
-matrix.
+Cloud conformance runs automatically for same-repository pull requests and
+pushes to `main`. Each suite reuses one persistent stack across branches and
+runs, with deployment concurrency controlled globally.
 
 ## Namespace
-
-All runtime and testing APIs use:
 
 ```text
 io.github.zhongkechen.durable

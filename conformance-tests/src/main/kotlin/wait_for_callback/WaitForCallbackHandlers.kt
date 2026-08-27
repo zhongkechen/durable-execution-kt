@@ -1,51 +1,42 @@
 package wait_for_callback
 
-import io.github.zhongkechen.durable.CallbackFailureException
-import io.github.zhongkechen.durable.CallbackOptions
-import io.github.zhongkechen.durable.CallbackWaitOptions
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.DurableRuntimeConfig
-import io.github.zhongkechen.durable.RetryPolicy
-import io.github.zhongkechen.durable.StepOptions
-import io.github.zhongkechen.durable.child
-import io.github.zhongkechen.durable.step
-import io.github.zhongkechen.durable.typeRef
+import io.github.zhongkechen.durable.*
+
 import kotlin.time.Duration.Companion.seconds
 
 public class WaitForCallbackBasic(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.waitForCallback(input, typeRef()) {}
+    override suspend fun handle(input: String): String =
+        waitForCallback(input, typeRef()) {}
 }
 
 public class WaitForCallbackExplicitName(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.waitForCallback("approval", typeRef()) {}
+    override suspend fun handle(input: Any?): String =
+        waitForCallback("approval", typeRef()) {}
 }
 
 public class WaitForCallbackAnonymous(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.waitForCallback(null, typeRef()) {}
+    override suspend fun handle(input: Any?): String =
+        waitForCallback(null, typeRef()) {}
 }
 
 public class WaitForCallbackExternalFailure(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.waitForCallback(input, typeRef()) {}
+    override suspend fun handle(input: String): String =
+        waitForCallback(input, typeRef()) {}
 }
 
 public class WaitForCallbackTimeout(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.waitForCallback(
+    override suspend fun handle(input: String): String =
+        waitForCallback(
             name = input,
             type = typeRef(),
             options =
@@ -58,9 +49,9 @@ public class WaitForCallbackTimeout(
 public class WaitForCallbackFailureCaught(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
+    override suspend fun handle(input: String): String =
         try {
-            context.waitForCallback(input, typeRef()) {}
+            waitForCallback(input, typeRef()) {}
         } catch (_: CallbackFailureException) {
             "recovered"
         }
@@ -69,8 +60,8 @@ public class WaitForCallbackFailureCaught(
 public class WaitForCallbackSubmitterRetryExhaustion(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.waitForCallback(
+    override suspend fun handle(input: String): String =
+        waitForCallback(
             name = input,
             type = typeRef(),
             options =
@@ -88,8 +79,8 @@ public class WaitForCallbackSubmitterRetryExhaustion(
 public class WaitForCallbackInChildContext(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.child("wrapper") {
+    override suspend fun handle(input: String): String =
+        runInChildContext("wrapper") {
             waitForCallback(input, typeRef()) {}
         }
 }
@@ -97,28 +88,28 @@ public class WaitForCallbackInChildContext(
 public class WaitForCallbackTwoSequential(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.waitForCallback("first", typeRef<String>()) {}
-        return context.waitForCallback("second", typeRef()) {}
+    override suspend fun handle(input: Any?): String {
+        waitForCallback("first", typeRef<String>()) {}
+        return waitForCallback("second", typeRef()) {}
     }
 }
 
 public class WaitForCallbackMixedOps(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String {
-        context.wait(1.seconds)
-        context.step<String>(null) { "fixed-data" }
-        return context.waitForCallback(input, typeRef()) {}
+    override suspend fun handle(input: String): String {
+        wait(1.seconds)
+        step<String>(null) { "fixed-data" }
+        return waitForCallback(input, typeRef()) {}
     }
 }
 
 public class WaitForCallbackJsonResult(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String {
+    override suspend fun handle(input: String): String {
         val result =
-            context.waitForCallback(
+            waitForCallback(
                 name = input,
                 type = typeRef<Map<String, String>>(),
             ) {}
@@ -129,8 +120,8 @@ public class WaitForCallbackJsonResult(
 public class WaitForCallbackHeartbeatTimeout(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.waitForCallback(
+    override suspend fun handle(input: String): String =
+        waitForCallback(
             name = input,
             type = typeRef(),
             options =
@@ -143,8 +134,8 @@ public class WaitForCallbackHeartbeatTimeout(
 public class WaitForCallbackHeartbeatThenSuccess(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.waitForCallback(
+    override suspend fun handle(input: String): String =
+        waitForCallback(
             name = input,
             type = typeRef(),
             options =
@@ -157,9 +148,9 @@ public class WaitForCallbackHeartbeatThenSuccess(
 public class WaitForCallbackTimeoutCaught(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): String =
+    override suspend fun handle(input: String): String =
         try {
-            context.waitForCallback(
+            waitForCallback(
                 name = input,
                 type = typeRef<String>(),
                 options =
@@ -175,6 +166,6 @@ public class WaitForCallbackTimeoutCaught(
 public class WaitForCallbackNullResult(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<String, Any?>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: String, context: DurableContext): Any? =
-        context.waitForCallback(input, typeRef()) {}
+    override suspend fun handle(input: String): Any? =
+        waitForCallback(input, typeRef()) {}
 }

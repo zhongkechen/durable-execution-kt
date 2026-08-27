@@ -32,6 +32,16 @@ import io.github.zhongkechen.durable.StepInterruptedException
 import io.github.zhongkechen.durable.StepOptions
 import io.github.zhongkechen.durable.StepScope
 import io.github.zhongkechen.durable.TypeRef
+import io.github.zhongkechen.durable.extension.ExtensionCallbackConfig
+import io.github.zhongkechen.durable.extension.ExtensionChildOperation
+import io.github.zhongkechen.durable.extension.ExtensionContextConfig
+import io.github.zhongkechen.durable.extension.ExtensionContextFailure
+import io.github.zhongkechen.durable.extension.ExtensionContextReplay
+import io.github.zhongkechen.durable.extension.ExtensionContextResult
+import io.github.zhongkechen.durable.extension.ExtensionInvokeConfig
+import io.github.zhongkechen.durable.extension.ExtensionRetryDecision
+import io.github.zhongkechen.durable.extension.ExtensionStepConfig
+import io.github.zhongkechen.durable.extension.ExtensionStepResult
 import io.github.zhongkechen.durable.typeRef
 import java.time.Instant
 import kotlin.time.Duration
@@ -43,6 +53,24 @@ internal class ExecutionSuspended(
     val operationId: String,
     val resumeAt: Instant? = null,
 ) : Error("Execution suspended at operation $operationId")
+
+internal data class ReservedOperation(
+    val id: String,
+    val name: String?,
+    val parentId: String?,
+) {
+    fun identity(
+        kind: OperationKind,
+        subtype: String,
+    ): OperationIdentity =
+        OperationIdentity(
+            id = id,
+            name = name,
+            kind = kind,
+            subtype = subtype,
+            parentId = parentId,
+        )
+}
 
 /**
  * Executes operations inside one deterministic context.
@@ -65,8 +93,22 @@ internal class OperationRuntime(
         options: StepOptions = StepOptions(),
         combineStartAndTerminal: Boolean = false,
         block: suspend StepScope.() -> T,
+    ): T =
+        step(
+            identity = reserveOperation(name).identity(OperationKind.STEP, "Step"),
+            type = type,
+            options = options,
+            combineStartAndTerminal = combineStartAndTerminal,
+            block = block,
+        )
+
+    internal suspend fun <T> step(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        options: StepOptions = StepOptions(),
+        combineStartAndTerminal: Boolean = false,
+        block: suspend StepScope.() -> T,
     ): T {
-        val identity = reserve(name, OperationKind.STEP, "Step")
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         val attempt = (existing?.attempt ?: 0) + 1
@@ -147,12 +189,138 @@ internal class OperationRuntime(
         return normalized
     }
 
+    internal suspend fun <T> extensionStep(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        config: ExtensionStepConfig<T>,
+        function: suspend StepScope.(state: T?) -> ExtensionStepResult<T>,
+    ): T {
+        val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
+        val attempt = (existing?.attempt ?: 0) + 1
+        val serde = config.serde ?: defaultSerde
+        val state =
+            if (existing?.resultPayload != null) {
+                serde.decode(existing.resultPayload, type)
+            } else {
+                config.initialState
+            }
+        var startCheckpoint: Deferred<Unit>? = null
+
+        when (existing?.status) {
+            CheckpointStatus.SUCCEEDED ->
+                return decodeResult(existing, type, config.serde)
+            CheckpointStatus.FAILED,
+            CheckpointStatus.TIMED_OUT,
+            CheckpointStatus.STOPPED,
+            CheckpointStatus.CANCELLED,
+            -> throw stepFailure(existing)
+            CheckpointStatus.PENDING ->
+                throw ExecutionSuspended(identity.id, existing.nextAttemptAt)
+            CheckpointStatus.STARTED -> {
+                if (config.delivery == DeliverySemantics.AT_MOST_ONCE_PER_RETRY) {
+                    return failExtensionStep(
+                        identity = identity,
+                        type = type,
+                        config = config,
+                        state = state,
+                        attempt = attempt,
+                        error = StepInterruptedException(identity.id),
+                    )
+                }
+            }
+            CheckpointStatus.READY,
+            null,
+            -> {
+                val start = CheckpointCommand(identity, CheckpointAction.START)
+                if (config.delivery == DeliverySemantics.AT_MOST_ONCE_PER_RETRY) {
+                    checkpoints.checkpoint(start)
+                } else {
+                    startCheckpoint = checkpoints.checkpointAsync(start)
+                }
+            }
+            CheckpointStatus.UNKNOWN ->
+                error("Operation ${identity.id} has an unsupported checkpoint status")
+        }
+
+        val outcome =
+            try {
+                runUserFunction(identity, attempt, replayingChildren = false) {
+                    function(
+                        StepScopeImpl(
+                            attempt,
+                            DurableLogger(executionArn, identity.id, identity.name, attempt),
+                        ),
+                        state,
+                    )
+                }
+            } catch (suspension: ExecutionSuspended) {
+                throw suspension
+            } catch (error: Throwable) {
+                return failExtensionStep(
+                    identity = identity,
+                    type = type,
+                    config = config,
+                    state = state,
+                    attempt = attempt,
+                    error = error,
+                    startCheckpoint = startCheckpoint,
+                )
+            }
+
+        return when (outcome) {
+            is ExtensionStepResult.Succeeded -> {
+                val payload = serde.encode(outcome.value)
+                val normalized = serde.decode(payload, type)
+                checkpoints.checkpoint(
+                    CheckpointCommand(
+                        identity = identity,
+                        action = CheckpointAction.SUCCEED,
+                        payload = payload,
+                    ),
+                )
+                startCheckpoint?.await()
+                normalized
+            }
+            is ExtensionStepResult.Retry ->
+                retryExtensionStep(
+                    identity = identity,
+                    type = type,
+                    serde = serde,
+                    state = outcome.state,
+                    delay = outcome.delay,
+                    startCheckpoint = startCheckpoint,
+                )
+            is ExtensionStepResult.RetryAfterNormalization -> {
+                val payload = serde.encode(outcome.state)
+                val normalized = serde.decode(payload, type)
+                retryExtensionStep(
+                    identity = identity,
+                    type = type,
+                    serde = serde,
+                    state = normalized,
+                    delay = outcome.delay(normalized),
+                    startCheckpoint = startCheckpoint,
+                )
+            }
+        }
+    }
+
     suspend fun wait(
         duration: Duration,
         name: String?,
     ) {
+        wait(
+            identity = reserveOperation(name).identity(OperationKind.WAIT, "Wait"),
+            duration = duration,
+        )
+    }
+
+    internal suspend fun wait(
+        identity: OperationIdentity,
+        duration: Duration,
+    ) {
         require(duration.isPositive()) { "Wait duration must be positive" }
-        val identity = reserve(name, OperationKind.WAIT, "Wait")
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         when (existing?.status) {
@@ -187,13 +355,32 @@ internal class OperationRuntime(
         input: I,
         outputType: TypeRef<O>,
         options: InvokeOptions = InvokeOptions(),
+    ): O =
+        invoke(
+            identity = reserveOperation(name).identity(OperationKind.INVOKE, "ChainedInvoke"),
+            functionName = functionName,
+            input = input,
+            outputType = outputType,
+            config =
+                ExtensionInvokeConfig(
+                    payloadSerde = options.payloadSerde,
+                    resultSerde = options.resultSerde,
+                    tenantId = options.tenantId,
+                ),
+        )
+
+    internal suspend fun <I, O> invoke(
+        identity: OperationIdentity,
+        functionName: String,
+        input: I,
+        outputType: TypeRef<O>,
+        config: ExtensionInvokeConfig,
     ): O {
-        val identity = reserve(name, OperationKind.INVOKE, "ChainedInvoke")
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         when (existing?.status) {
             CheckpointStatus.SUCCEEDED ->
-                return decodeResult(existing, outputType, options.resultSerde)
+                return decodeResult(existing, outputType, config.resultSerde)
             CheckpointStatus.FAILED,
             CheckpointStatus.TIMED_OUT,
             CheckpointStatus.STOPPED,
@@ -209,14 +396,14 @@ internal class OperationRuntime(
             CheckpointStatus.UNKNOWN ->
                 error("Invocation ${identity.id} has an unsupported checkpoint status")
             null -> {
-                val payload = (options.payloadSerde ?: defaultSerde).encode(input)
+                val payload = (config.payloadSerde ?: defaultSerde).encode(input)
                 checkpoints.checkpoint(
                     CheckpointCommand(
                         identity = identity,
                         action = CheckpointAction.START,
                         payload = payload,
                         targetFunction = functionName,
-                        tenantId = options.tenantId,
+                        tenantId = config.tenantId,
                     ),
                 )
                 throw ExecutionSuspended(identity.id)
@@ -228,8 +415,23 @@ internal class OperationRuntime(
         name: String?,
         type: TypeRef<T>,
         options: CallbackOptions = CallbackOptions(),
+    ): CallbackHandle<T> =
+        callback(
+            identity = reserveOperation(name).identity(OperationKind.CALLBACK, "Callback"),
+            type = type,
+            config =
+                ExtensionCallbackConfig(
+                    timeout = options.timeout,
+                    heartbeatTimeout = options.heartbeatTimeout,
+                    serde = options.serde,
+                ),
+        )
+
+    internal suspend fun <T> callback(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        config: ExtensionCallbackConfig,
     ): CallbackHandle<T> {
-        val identity = reserve(name, OperationKind.CALLBACK, "Callback")
         var existing = ledger.find(identity)
         notifyObserved(identity, existing)
         if (existing == null) {
@@ -237,8 +439,8 @@ internal class OperationRuntime(
                 CheckpointCommand(
                     identity = identity,
                     action = CheckpointAction.START,
-                    callbackTimeout = options.timeout,
-                    heartbeatTimeout = options.heartbeatTimeout,
+                    callbackTimeout = config.timeout,
+                    heartbeatTimeout = config.heartbeatTimeout,
                 ),
             )
             existing = ledger.snapshot()[identity.id]
@@ -250,7 +452,7 @@ internal class OperationRuntime(
             identity = identity,
             id = callbackId,
             type = type,
-            serde = options.serde ?: defaultSerde,
+            serde = config.serde ?: defaultSerde,
             ledger = ledger,
             terminalWhenObserved = existing.status.terminal,
         )
@@ -262,7 +464,8 @@ internal class OperationRuntime(
         options: CallbackWaitOptions = CallbackWaitOptions(),
         submitter: suspend CallbackSubmitterScope.() -> Unit,
     ): T {
-        val identity = reserve(name, OperationKind.CONTEXT, "WaitForCallback")
+        val identity =
+            reserveOperation(name).identity(OperationKind.CONTEXT, "WaitForCallback")
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         if (existing?.status == CheckpointStatus.SUCCEEDED) {
@@ -340,7 +543,8 @@ internal class OperationRuntime(
         options: ConditionOptions<T>,
         check: suspend ConditionScope<T>.() -> ConditionDecision<T>,
     ): T {
-        val identity = reserve(name, OperationKind.STEP, "WaitForCondition")
+        val identity =
+            reserveOperation(name).identity(OperationKind.STEP, "WaitForCondition")
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         when (existing?.status) {
@@ -446,9 +650,152 @@ internal class OperationRuntime(
         type: TypeRef<T>,
         options: ChildOptions = ChildOptions(),
         block: suspend OperationRuntime.() -> T,
+    ): T =
+        context(
+            identity = reserveOperation(name).identity(OperationKind.CONTEXT, "RunInChildContext"),
+            type = type,
+            options = options,
+            block = block,
+        )
+
+    internal suspend fun <T> context(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        options: ChildOptions = ChildOptions(),
+        block: suspend OperationRuntime.() -> T,
+    ): T = runContext(identity, type, options, block)
+
+    internal suspend fun <T> extensionContext(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        config: ExtensionContextConfig,
+        block: suspend (
+            childRuntime: OperationRuntime,
+            replay: ExtensionContextReplay<T>,
+        ) -> ExtensionContextResult<T>,
     ): T {
-        val identity = reserve(name, OperationKind.CONTEXT, "RunInChildContext")
-        return runContext(identity, type, options, block)
+        val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
+        if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
+            return decodeResult(existing, type, config.serde)
+        }
+        if (existing != null && existing.status.terminal && existing.status != CheckpointStatus.SUCCEEDED) {
+            throw childFailure(existing)
+        }
+        if (existing != null &&
+            existing.status != CheckpointStatus.STARTED &&
+            !(existing.status == CheckpointStatus.SUCCEEDED && existing.replayChildren)
+        ) {
+            error("Extension context ${identity.id} has unsupported status ${existing.status}")
+        }
+        if (existing == null && !config.virtual) {
+            checkpoints.checkpoint(CheckpointCommand(identity, CheckpointAction.START))
+        }
+
+        val childRuntime =
+            OperationRuntime(
+                executionArn = executionArn,
+                isReplaying = existing != null,
+                ledger = ledger,
+                checkpoints = checkpoints,
+                parentId = if (config.virtual) parentId else identity.id,
+                ids = OperationIdSequence(if (config.virtual) parentId else identity.id),
+                defaultSerde = defaultSerde,
+                plugins = plugins,
+            )
+        val serde = config.serde ?: defaultSerde
+        val replayState =
+            existing
+                ?.takeIf { it.replayChildren && !it.resultPayload.isNullOrEmpty() }
+                ?.let { serde.decode(it.resultPayload!!, type) }
+        val replay =
+            ExtensionContextReplay(
+                replayingChildren = existing?.replayChildren == true,
+                replayState = replayState,
+            )
+
+        return try {
+            val outcome =
+                if (config.emitFunctionEvents) {
+                    runUserFunction(
+                        identity = identity,
+                        attempt = null,
+                        replayingChildren = replay.replayingChildren,
+                    ) {
+                        block(childRuntime, replay)
+                    }
+                } else {
+                    block(childRuntime, replay)
+                }
+            if (config.virtual || existing?.replayChildren == true) return outcome.result
+
+            val fullPayload = serde.encode(outcome.result)
+            val normalized = serde.decode(fullPayload, type)
+            val replayChildren =
+                when (outcome) {
+                    is ExtensionContextResult.Completed -> false
+                    is ExtensionContextResult.ReplayChildren -> true
+                    is ExtensionContextResult.ReplayChildrenAboveSize ->
+                        fullPayload.encodeToByteArray().size >= outcome.thresholdBytes
+                }
+            val checkpointPayload =
+                if (replayChildren) {
+                    val state =
+                        when (outcome) {
+                            is ExtensionContextResult.ReplayChildren -> outcome.replayState
+                            is ExtensionContextResult.ReplayChildrenAboveSize -> outcome.replayState
+                            is ExtensionContextResult.Completed -> null
+                        }
+                    if (state == null) "" else serde.encode(state)
+                } else {
+                    fullPayload
+                }
+            checkpoints.checkpoint(
+                CheckpointCommand(
+                    identity = identity,
+                    action = CheckpointAction.SUCCEED,
+                    payload = checkpointPayload,
+                    replayChildren = replayChildren,
+                ),
+            )
+            normalized
+        } catch (suspension: ExecutionSuspended) {
+            throw suspension
+        } catch (error: Throwable) {
+            val failure =
+                ExtensionContextFailure(
+                    contextName = identity.name,
+                    subtype = identity.subtype,
+                    originalException = error,
+                    childOperations =
+                        ledger
+                            .snapshot()
+                            .values
+                            .filter { it.identity.parentId == identity.id }
+                            .map {
+                                ExtensionChildOperation(
+                                    id = it.identity.id,
+                                    name = it.identity.name,
+                                    type = it.identity.kind.name,
+                                    subtype = it.identity.subtype,
+                                    status = it.status.name,
+                                )
+                            },
+                )
+            val translated =
+                config.errorHandler?.invoke(failure)
+                    ?: ChildFailureException(identity.id, error)
+            if (!config.virtual) {
+                checkpoints.checkpoint(
+                    CheckpointCommand(
+                        identity = identity,
+                        action = CheckpointAction.FAIL,
+                        error = translated.toCheckpointError(),
+                    ),
+                )
+            }
+            throw translated
+        }
     }
 
     suspend fun <I, O> map(
@@ -458,7 +805,7 @@ internal class OperationRuntime(
         options: MapOptions<I> = MapOptions(),
         block: suspend OperationRuntime.(item: I, index: Int) -> O,
     ): MapResult<O> {
-        val identity = reserve(name, OperationKind.CONTEXT, "Map")
+        val identity = reserveOperation(name).identity(OperationKind.CONTEXT, "Map")
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
@@ -540,7 +887,7 @@ internal class OperationRuntime(
         register: RuntimeParallelScope.() -> Unit,
     ): ParallelResult {
         val branches = RuntimeParallelScope().apply(register)
-        val identity = reserve(name, OperationKind.CONTEXT, "Parallel")
+        val identity = reserveOperation(name).identity(OperationKind.CONTEXT, "Parallel")
         val existing = ledger.find(identity)
         notifyObserved(identity, existing)
         if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
@@ -683,16 +1030,13 @@ internal class OperationRuntime(
         }
     }
 
-    private fun reserve(
+    internal fun reserveOperation(
         name: String?,
-        kind: OperationKind,
-        subtype: String,
-    ): OperationIdentity =
-        OperationIdentity(
-            id = ids.next(),
+        localOperationId: String? = null,
+    ): ReservedOperation =
+        ReservedOperation(
+            id = if (localOperationId == null) ids.next() else ids.next(localOperationId),
             name = name,
-            kind = kind,
-            subtype = subtype,
             parentId = parentId,
         )
 
@@ -790,6 +1134,69 @@ internal class OperationRuntime(
                 throw ExecutionSuspended(identity.id, resumeAt)
             }
         }
+
+    private suspend fun <T> failExtensionStep(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        config: ExtensionStepConfig<T>,
+        state: T?,
+        attempt: Int,
+        error: Throwable,
+        startCheckpoint: Deferred<Unit>? = null,
+    ): T =
+        when (
+            val decision =
+                config.retry?.decide(error, state, attempt)
+                    ?: ExtensionRetryDecision.DoNotRetry
+        ) {
+            ExtensionRetryDecision.DoNotRetry -> {
+                checkpoints.checkpoint(
+                    CheckpointCommand(
+                        identity = identity,
+                        action = CheckpointAction.FAIL,
+                        error = error.toCheckpointError(),
+                    ),
+                )
+                startCheckpoint?.await()
+                throw StepFailureException(identity.id, error)
+            }
+            is ExtensionRetryDecision.Retry ->
+                retryExtensionStep(
+                    identity = identity,
+                    type = type,
+                    serde = config.serde ?: defaultSerde,
+                    state = decision.state,
+                    delay = decision.delay,
+                    error = error,
+                    startCheckpoint = startCheckpoint,
+                )
+        }
+
+    private suspend fun <T> retryExtensionStep(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        serde: Serde,
+        state: T?,
+        delay: Duration,
+        error: Throwable? = null,
+        startCheckpoint: Deferred<Unit>? = null,
+    ): T {
+        require(delay.isPositive()) { "Retry delay must be positive" }
+        val payload = serde.encode(state)
+        serde.decode(payload, type)
+        val resumeAt = Instant.now().plusMillis(delay.inWholeMilliseconds)
+        checkpoints.checkpoint(
+            CheckpointCommand(
+                identity = identity,
+                action = CheckpointAction.RETRY,
+                payload = payload,
+                error = error?.toCheckpointError(),
+                retryDelay = delay,
+            ),
+        )
+        startCheckpoint?.await()
+        throw ExecutionSuspended(identity.id, resumeAt)
+    }
 
     private suspend fun checkpointTerminal(
         start: CheckpointCommand?,

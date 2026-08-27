@@ -1,9 +1,7 @@
 package wait
 
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.DurableRuntimeConfig
-import io.github.zhongkechen.durable.typeRef
+import io.github.zhongkechen.durable.*
+
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -13,9 +11,8 @@ public class WaitBasic(
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Any?,
-        context: DurableContext,
     ): String {
-        context.wait(2.seconds)
+        wait(2.seconds)
         return "Wait completed"
     }
 }
@@ -25,9 +22,8 @@ public class WaitWithName(
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Any?,
-        context: DurableContext,
     ): String {
-        context.wait(2.seconds, "custom_wait_name")
+        wait(2.seconds, "custom_wait_name")
         return "Wait with name completed"
     }
 }
@@ -37,10 +33,9 @@ public class WaitMultipleSequential(
 ) : DurableHandler<Any?, Map<String, Int>>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Any?,
-        context: DurableContext,
     ): Map<String, Int> {
-        context.wait(2.seconds, "wait-1")
-        context.wait(2.seconds, "wait-2")
+        wait(2.seconds, "wait-1")
+        wait(2.seconds, "wait-2")
         return mapOf("completedWaits" to 2)
     }
 }
@@ -50,9 +45,8 @@ public class WaitDurationUnits(
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Any?,
-        context: DurableContext,
     ): String {
-        context.wait(1.minutes)
+        wait(1.minutes)
         return "Wait with minutes completed"
     }
 }
@@ -62,9 +56,8 @@ public class WaitLongDuration(
 ) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
     override suspend fun handle(
         input: Any?,
-        context: DurableContext,
     ): String {
-        context.wait(1.hours)
+        wait(1.hours)
         return "Wait with hours completed"
     }
 }

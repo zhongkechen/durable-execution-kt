@@ -93,17 +93,13 @@ public abstract class DurableHandler<I, O>(
 
     protected abstract suspend fun handle(
         input: I,
-        context: DurableContext,
     ): O
 }
 
 public inline fun <reified I, reified O> durableHandler(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
-    crossinline block: suspend (I, DurableContext) -> O,
+    crossinline block: suspend (I) -> O,
 ): RequestStreamHandler =
     object : DurableHandler<I, O>(typeRef(), typeRef(), config) {
-        override suspend fun handle(
-            input: I,
-            context: DurableContext,
-        ): O = block(input, context)
+        override suspend fun handle(input: I): O = block(input)
     }

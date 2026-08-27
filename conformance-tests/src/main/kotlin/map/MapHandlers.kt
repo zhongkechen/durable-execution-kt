@@ -1,25 +1,14 @@
 package map
 
-import io.github.zhongkechen.durable.BatchCompletion
-import io.github.zhongkechen.durable.CompletionPolicy
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.DurableRuntimeConfig
-import io.github.zhongkechen.durable.ItemResult
-import io.github.zhongkechen.durable.MapOptions
-import io.github.zhongkechen.durable.MapResult
-import io.github.zhongkechen.durable.Nesting
-import io.github.zhongkechen.durable.Serde
-import io.github.zhongkechen.durable.TypeRef
-import io.github.zhongkechen.durable.step
-import io.github.zhongkechen.durable.typeRef
+import io.github.zhongkechen.durable.*
+
 import kotlin.time.Duration.Companion.seconds
 
 public class MapBasic(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "map",
             items = listOf("World", "Kiro"),
             outputType = typeRef(),
@@ -32,8 +21,8 @@ public class MapBasic(
 public class MapItemIndex(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<Int>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<Int> =
-        context.map(
+    override suspend fun handle(input: Any?): List<Int> =
+        map(
             name = "indexed",
             items = listOf(10, 20, 30),
             outputType = typeRef(),
@@ -46,8 +35,8 @@ public class MapItemIndex(
 public class MapItemsOnly(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<List<Int>, List<Int>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: List<Int>, context: DurableContext): List<Int> =
-        context.map(
+    override suspend fun handle(input: List<Int>): List<Int> =
+        map(
             items = input.ifEmpty { listOf(1, 2) },
             outputType = typeRef(),
             options = MapOptions(maximumConcurrency = 1),
@@ -59,8 +48,8 @@ public class MapItemsOnly(
 public class MapEmpty(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "empty",
             items = emptyList<String>(),
             outputType = typeRef(),
@@ -71,9 +60,9 @@ public class MapEmpty(
 public class MapFailFast(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
+    override suspend fun handle(input: Any?): Map<String, Any> =
         summary(
-            context.map(
+            map(
                 name = "failfast",
                 items = listOf("ok", "fail", "never"),
                 outputType = typeRef(),
@@ -93,9 +82,9 @@ public class MapFailFast(
 public class MapMinSuccessful(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
+    override suspend fun handle(input: Any?): Map<String, Any> =
         summary(
-            context.map(
+            map(
                 name = "min-successful",
                 items = listOf("s0", "s1", "s2", "s3"),
                 outputType = typeRef(),
@@ -111,8 +100,8 @@ public class MapMinSuccessful(
 public class MapThrowIfError(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "throwing",
             items = listOf("fail", "never"),
             outputType = typeRef(),
@@ -131,9 +120,9 @@ public class MapThrowIfError(
 public class MapToleratedWithin(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
+    override suspend fun handle(input: Any?): Map<String, Any> =
         summary(
-            context.map(
+            map(
                 name = "tolerated",
                 items = listOf("s0", "fail", "s2"),
                 outputType = typeRef(),
@@ -153,9 +142,9 @@ public class MapToleratedWithin(
 public class MapToleratedExceeded(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
+    override suspend fun handle(input: Any?): Map<String, Any> =
         summary(
-            context.map(
+            map(
                 name = "tolerated-exceeded",
                 items = listOf("f0", "f1", "never"),
                 outputType = typeRef(),
@@ -174,9 +163,9 @@ public class MapToleratedExceeded(
 public class MapToleratedPct(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
+    override suspend fun handle(input: Any?): Map<String, Any> =
         summary(
-            context.map(
+            map(
                 name = "tolerated-pct",
                 items = listOf("f0", "f1", "never", "never"),
                 outputType = typeRef(),
@@ -195,8 +184,8 @@ public class MapToleratedPct(
 public class MapConcurrent(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "concurrent",
             items = listOf("r0", "r1", "r2"),
             outputType = typeRef(),
@@ -208,8 +197,8 @@ public class MapConcurrent(
 public class MapFlat(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "flat",
             items = listOf("fa", "fb"),
             outputType = typeRef(),
@@ -226,8 +215,8 @@ public class MapFlat(
 public class MapItemNamer(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<List<Int>, List<Int>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: List<Int>, context: DurableContext): List<Int> =
-        context.map(
+    override suspend fun handle(input: List<Int>): List<Int> =
+        map(
             name = "named-items",
             items = input,
             outputType = typeRef(),
@@ -243,8 +232,8 @@ public class MapItemNamer(
 public class MapItemSerdes(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "serdes",
             items = listOf("x", "y"),
             outputType = typeRef(),
@@ -260,8 +249,8 @@ public class MapItemSerdes(
 public class MapSuspendIteration(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "suspend",
             items = listOf("r0", "r1"),
             outputType = typeRef(),
@@ -275,10 +264,10 @@ public class MapSuspendIteration(
 public class MapLargeResult(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> {
+    override suspend fun handle(input: Any?): Map<String, Any> {
         val big = "x".repeat(70_000)
         val result =
-            context.map(
+            map(
                 name = "large",
                 items = listOf(0, 1, 2, 3),
                 outputType = typeRef<String>(),
@@ -294,15 +283,15 @@ public class MapLargeResult(
 public class MapThenWait(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
+    override suspend fun handle(input: Any?): List<String> {
         val result =
-            context.map(
+            map(
                 name = "then-wait",
                 items = listOf("a", "b"),
                 outputType = typeRef<String>(),
                 options = MapOptions(maximumConcurrency = 1),
             ) { item, _ -> item.uppercase() }
-        context.wait(1.seconds)
+        wait(1.seconds)
         return result.values()
     }
 }
@@ -310,9 +299,9 @@ public class MapThenWait(
 public class MapFailThenWait(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> {
+    override suspend fun handle(input: Any?): Map<String, Any> {
         val result =
-            context.map(
+            map(
                 name = "fail-then-wait",
                 items = listOf("ok", "fail"),
                 outputType = typeRef<String>(),
@@ -325,7 +314,7 @@ public class MapFailThenWait(
                 if (item == "fail") error("item failed")
                 item
             }
-        context.wait(1.seconds)
+        wait(1.seconds)
         return summary(result, includeStatus = true)
     }
 }
@@ -333,8 +322,8 @@ public class MapFailThenWait(
 public class MapOpSerde(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
-        context.map(
+    override suspend fun handle(input: Any?): List<String> =
+        map(
             name = "op-serde",
             items = listOf("x", "y"),
             outputType = typeRef(),
@@ -350,9 +339,9 @@ public class MapOpSerde(
 public class MapOpSerdeReplay(
     config: DurableRuntimeConfig = DurableRuntimeConfig(),
 ) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
+    override suspend fun handle(input: Any?): List<String> {
         val result =
-            context.map(
+            map(
                 name = "op-serde-replay",
                 items = listOf("x", "y"),
                 outputType = typeRef<String>(),
@@ -362,7 +351,7 @@ public class MapOpSerdeReplay(
                         resultSerde = WholeMapSerde,
                     ),
             ) { item, _ -> item.uppercase() }
-        context.wait(1.seconds)
+        wait(1.seconds)
         return result.values()
     }
 }

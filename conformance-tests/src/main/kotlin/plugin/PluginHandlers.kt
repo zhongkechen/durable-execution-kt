@@ -1,25 +1,7 @@
 package plugin
 
-import io.github.zhongkechen.durable.CallbackFailureException
-import io.github.zhongkechen.durable.CompletionPolicy
-import io.github.zhongkechen.durable.DurableContext
-import io.github.zhongkechen.durable.DurableFuture
-import io.github.zhongkechen.durable.DurableHandler
-import io.github.zhongkechen.durable.DurablePlugin
-import io.github.zhongkechen.durable.DurableRuntimeConfig
-import io.github.zhongkechen.durable.ExecutionStatus
-import io.github.zhongkechen.durable.FunctionAttemptEnded
-import io.github.zhongkechen.durable.FunctionAttemptStarted
-import io.github.zhongkechen.durable.InvocationEnded
-import io.github.zhongkechen.durable.InvocationStarted
-import io.github.zhongkechen.durable.OperationSnapshot
-import io.github.zhongkechen.durable.ParallelOptions
-import io.github.zhongkechen.durable.RetryJitter
-import io.github.zhongkechen.durable.RetryPolicy
-import io.github.zhongkechen.durable.StepOptions
-import io.github.zhongkechen.durable.child
-import io.github.zhongkechen.durable.step
-import io.github.zhongkechen.durable.typeRef
+import io.github.zhongkechen.durable.*
+
 import kotlin.time.Duration.Companion.seconds
 
 public class PluginInvocationLifecycle(
@@ -29,8 +11,8 @@ public class PluginInvocationLifecycle(
         typeRef(),
         config.withPlugins(ConformanceLoggingPlugin("CONFPLUGIN")),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") {
+    override suspend fun handle(input: String): String =
+        step("greet") {
             logger.info("Greeting step running for: {}", input)
             "Hello, $input!"
         }
@@ -43,8 +25,8 @@ public class PluginOperationLifecycle(
         typeRef(),
         config.withPlugins(ConformanceLoggingPlugin("CONFPLUGIN")),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") { "Hello, $input!" }
+    override suspend fun handle(input: String): String =
+        step("greet") { "Hello, $input!" }
 }
 
 public class PluginAttemptHooksRetry(
@@ -54,8 +36,8 @@ public class PluginAttemptHooksRetry(
         typeRef(),
         config.withPlugins(ConformanceLoggingPlugin("CONFPLUGIN")),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             "retry-step",
             StepOptions(retry = RetryPolicy.fixed(maxAttempts = 3, delay = 1.seconds)),
         ) {
@@ -71,8 +53,8 @@ public class PluginErrorIsolation(
         typeRef(),
         config.withPlugins(FaultyConformancePlugin()),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") { "Hello, $input!" }
+    override suspend fun handle(input: String): String =
+        step("greet") { "Hello, $input!" }
 }
 
 public class PluginMultiplePlugins(
@@ -82,8 +64,8 @@ public class PluginMultiplePlugins(
         typeRef(),
         config.withPlugins(InvocationOnlyPlugin("CONFPLUGIN-A"), InvocationOnlyPlugin("CONFPLUGIN-B")),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") { "Hello, $input!" }
+    override suspend fun handle(input: String): String =
+        step("greet") { "Hello, $input!" }
 }
 
 public class PluginFirstInvocationFlag(
@@ -93,8 +75,8 @@ public class PluginFirstInvocationFlag(
         typeRef(),
         config.withPlugins(ConformanceLoggingPlugin("CONFPLUGIN")),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.wait(2.seconds)
+    override suspend fun handle(input: Any?): String {
+        wait(2.seconds)
         return "Wait completed"
     }
 }
@@ -106,8 +88,8 @@ public class PluginTerminalFailure(
         typeRef(),
         config.withPlugins(ConformanceLoggingPlugin("CONFPLUGIN")),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step("failing-step", StepOptions(retry = RetryPolicy.none)) {
+    override suspend fun handle(input: Any?): String =
+        step("failing-step", StepOptions(retry = RetryPolicy.none)) {
             error("Something went wrong")
         }
 }
@@ -119,8 +101,8 @@ public class PluginOperationChange(
         typeRef(),
         config.withPlugins(SimpleChangePlugin()),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") { "Hello, $input!" }
+    override suspend fun handle(input: String): String =
+        step("greet") { "Hello, $input!" }
 }
 
 public class PluginExternalUpdateOnInvoke(
@@ -130,8 +112,8 @@ public class PluginExternalUpdateOnInvoke(
         typeRef(),
         config.withPlugins(ExternalUpdatePlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.wait(2.seconds)
+    override suspend fun handle(input: Any?): String {
+        wait(2.seconds)
         return "Wait completed"
     }
 }
@@ -143,8 +125,8 @@ public class PluginWaitOperationHooks(
         typeRef(),
         config.withPlugins(WaitHooksPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.wait(2.seconds)
+    override suspend fun handle(input: Any?): String {
+        wait(2.seconds)
         return "Wait completed"
     }
 }
@@ -156,8 +138,8 @@ public class PluginNestedParentLinkage(
         typeRef(),
         config.withPlugins(ParentLinkPlugin()),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.child("child") {
+    override suspend fun handle(input: String): String =
+        runInChildContext("child") {
             step<String>("greet") { "Hello, $input!" }
         }
 }
@@ -169,9 +151,9 @@ public class PluginParallelBranchHooks(
         typeRef(),
         config.withPlugins(BranchHooksPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
+    override suspend fun handle(input: Any?): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("parallel", ParallelOptions(maximumConcurrency = 1)) {
+        parallel("parallel", ParallelOptions(maximumConcurrency = 1)) {
             futures += branch("branch-0", typeRef()) { "task-1" }
             futures += branch("branch-1", typeRef()) { "task-2" }
         }
@@ -186,9 +168,9 @@ public class PluginReplayFlags(
         typeRef(),
         config.withPlugins(ReplayPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.step<String>("step-a") { "a" }
-        return context.step(
+    override suspend fun handle(input: Any?): String {
+        step<String>("step-a") { "a" }
+        return step(
             "step-b",
             StepOptions(
                 retry =
@@ -214,8 +196,8 @@ public class PluginRetryExhaustion(
         typeRef(),
         config.withPlugins(AttemptLifecyclePlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             "always-fails",
             StepOptions(
                 retry =
@@ -239,8 +221,8 @@ public class PluginSuspensionInvocationEnd(
         typeRef(),
         config.withPlugins(InvocationShapePlugin(simple = true)),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.wait(2.seconds)
+    override suspend fun handle(input: Any?): String {
+        wait(2.seconds)
         return "Wait completed"
     }
 }
@@ -252,8 +234,8 @@ public class PluginFaultyAndHealthy(
         typeRef(),
         config.withPlugins(FaultyPeerPlugin(), HealthyPeerPlugin()),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String =
-        context.step("greet") { "Hello, $input!" }
+    override suspend fun handle(input: String): String =
+        step("greet") { "Hello, $input!" }
 }
 
 public class PluginOperationEndPayload(
@@ -263,9 +245,9 @@ public class PluginOperationEndPayload(
         typeRef(),
         config.withPlugins(OperationPayloadPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String {
-        context.step<String>("task-a") { "task-a" }
-        return context.step("task-b", StepOptions(retry = RetryPolicy.none)) {
+    override suspend fun handle(input: Any?): String {
+        step<String>("task-a") { "task-a" }
+        return step("task-b", StepOptions(retry = RetryPolicy.none)) {
             error("boom")
         }
     }
@@ -278,9 +260,9 @@ public class PluginPendingWaitReplay(
         typeRef(),
         config.withPlugins(PendingWaitPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
+    override suspend fun handle(input: Any?): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("waits", ParallelOptions(maximumConcurrency = 2)) {
+        parallel("waits", ParallelOptions(maximumConcurrency = 2)) {
             futures +=
                 branch("short-branch", typeRef()) {
                     wait(2.seconds, "short")
@@ -303,8 +285,8 @@ public class PluginInvocationInfoFields(
         typeRef(),
         config.withPlugins(InvocationShapePlugin(simple = false)),
     ) {
-    override suspend fun handle(input: String, context: DurableContext): String {
-        context.wait(2.seconds)
+    override suspend fun handle(input: String): String {
+        wait(2.seconds)
         return "done-$input"
     }
 }
@@ -316,8 +298,8 @@ public class PluginOperationInfoFields(
         typeRef(),
         config.withPlugins(OperationFieldsPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step("greet") { "task-a" }
+    override suspend fun handle(input: Any?): String =
+        step("greet") { "task-a" }
 }
 
 public class PluginAttemptInfoFields(
@@ -327,8 +309,8 @@ public class PluginAttemptInfoFields(
         typeRef(),
         config.withPlugins(AttemptFieldsPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step(
+    override suspend fun handle(input: Any?): String =
+        step(
             "flaky",
             StepOptions(retry = RetryPolicy.fixed(maxAttempts = 2, delay = 1.seconds)),
         ) {
@@ -344,8 +326,8 @@ public class PluginOperationChangeFields(
         typeRef(),
         config.withPlugins(ChangeFieldsPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): String =
-        context.step("greet") { "task-a" }
+    override suspend fun handle(input: Any?): String =
+        step("greet") { "task-a" }
 }
 
 public class PluginContextInfoFields(
@@ -355,9 +337,9 @@ public class PluginContextInfoFields(
         typeRef(),
         config.withPlugins(ContextFieldsPlugin()),
     ) {
-    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
+    override suspend fun handle(input: Any?): List<String> {
         val futures = mutableListOf<DurableFuture<String>>()
-        context.parallel("ctx", ParallelOptions(maximumConcurrency = 1)) {
+        parallel("ctx", ParallelOptions(maximumConcurrency = 1)) {
             futures +=
                 branch("branch-a", typeRef()) {
                     step<String>("inner") { "x" }
