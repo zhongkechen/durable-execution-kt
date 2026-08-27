@@ -1,151 +1,191 @@
-// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0
 package callback
 
-import java.time.Duration
+import io.github.zhongkechen.durable.CallbackFailureException
+import io.github.zhongkechen.durable.CallbackOptions
+import io.github.zhongkechen.durable.DurableContext
+import io.github.zhongkechen.durable.DurableHandler
+import io.github.zhongkechen.durable.DurableRuntimeConfig
+import io.github.zhongkechen.durable.Serde
+import io.github.zhongkechen.durable.TypeRef
+import io.github.zhongkechen.durable.step
+import io.github.zhongkechen.durable.typeRef
 import java.time.Instant
-import software.amazon.lambda.durable.TypeToken
-import software.amazon.lambda.durable.config.CallbackConfig
-import software.amazon.lambda.durable.exception.CallbackException
-import software.amazon.lambda.durable.kotlin.KotlinDurableContext
-import software.amazon.lambda.durable.kotlin.KotlinDurableHandler
-import software.amazon.lambda.durable.serde.SerDes
+import kotlin.time.Duration.Companion.seconds
 
-public class CallbackBasic : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.callback<String>(input).await()
+public class CallbackBasic(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.callback(input, typeRef<String>()).await()
 }
 
-public class CallbackWithName : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String =
-        context.callback<String>("approval").await()
+public class CallbackWithName(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String =
+        context.callback("approval", typeRef<String>()).await()
 }
 
-public class CallbackTimeout : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.callback<String>(
-            input,
-            CallbackConfig.builder().timeout(Duration.ofSeconds(5)).build(),
+public class CallbackTimeout(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.callback(
+            name = input,
+            type = typeRef<String>(),
+            options = CallbackOptions(timeout = 5.seconds),
         ).await()
 }
 
-public class CallbackHeartbeatTimeout : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.callback<String>(
-            input,
-            CallbackConfig.builder().heartbeatTimeout(Duration.ofSeconds(5)).build(),
+public class CallbackHeartbeatTimeout(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.callback(
+            name = input,
+            type = typeRef<String>(),
+            options = CallbackOptions(heartbeatTimeout = 5.seconds),
         ).await()
 }
 
-public class CallbackHeartbeatSuccess : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.callback<String>(
-            input,
-            CallbackConfig.builder().heartbeatTimeout(Duration.ofSeconds(10)).build(),
+public class CallbackHeartbeatSuccess(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.callback(
+            name = input,
+            type = typeRef<String>(),
+            options = CallbackOptions(heartbeatTimeout = 10.seconds),
         ).await()
 }
 
-public class CallbackFailure : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.callback<String>(input).await()
+public class CallbackFailure(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.callback(input, typeRef<String>()).await()
 }
 
-public class CallbackStepFailure : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        val callback = context.callback<String>(input)
+public class CallbackStepFailure(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        val callback = context.callback(input, typeRef<String>())
         context.step<String>("notify-external") { "notified" }
         return callback.await()
     }
 }
 
-public class CallbackStepTimeout : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+public class CallbackStepTimeout(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
         val callback =
-            context.callback<String>(
-                input,
-                CallbackConfig.builder().timeout(Duration.ofSeconds(5)).build(),
+            context.callback(
+                name = input,
+                type = typeRef<String>(),
+                options = CallbackOptions(timeout = 5.seconds),
             )
         context.step<String>("notify-external") { "notified" }
         return callback.await()
     }
 }
 
-public class CallbackWaitSuccess : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        val callback = context.callback<String>(input)
-        context.wait(Duration.ofSeconds(5), "delay")
+public class CallbackWaitSuccess(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        val callback = context.callback(input, typeRef<String>())
+        context.wait(5.seconds, "delay")
         return callback.await()
     }
 }
 
-public class CallbackWaitFailure : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        val callback = context.callback<String>(input)
-        context.wait(Duration.ofSeconds(5), "delay")
+public class CallbackWaitFailure(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        val callback = context.callback(input, typeRef<String>())
+        context.wait(5.seconds, "delay")
         return callback.await()
     }
 }
 
-public class CallbackWaitTimeout : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+public class CallbackWaitTimeout(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
         val callback =
-            context.callback<String>(
-                input,
-                CallbackConfig.builder().timeout(Duration.ofSeconds(3)).build(),
+            context.callback(
+                name = input,
+                type = typeRef<String>(),
+                options = CallbackOptions(timeout = 3.seconds),
             )
-        context.wait(Duration.ofSeconds(6), "delay")
+        context.wait(6.seconds, "delay")
         return callback.await()
     }
 }
 
-public class CallbackReplayWithWait : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        val result = context.callback<String>(input).await()
-        context.wait(Duration.ofSeconds(2), "after-cb")
+public class CallbackReplayWithWait(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        val result = context.callback(input, typeRef<String>()).await()
+        context.wait(2.seconds, "after-cb")
         return result
     }
 }
 
-public class CallbackReplayFailure : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+public class CallbackReplayFailure(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
         val outcome =
             try {
-                context.callback<String>(input).await()
-            } catch (error: CallbackException) {
+                context.callback(input, typeRef<String>()).await()
+            } catch (error: CallbackFailureException) {
                 "caught_failure:${error.message}"
             } catch (error: RuntimeException) {
-                "caught_other:${error.javaClass.simpleName}:${error.message}"
+                "caught_other:${error::class.simpleName}:${error.message}"
             }
-        context.wait(Duration.ofSeconds(2), "after-cb")
+        context.wait(2.seconds, "after-cb")
         return outcome
     }
 }
 
-public class CallbackReplayTimeout : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+public class CallbackReplayTimeout(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
         val outcome =
             try {
-                context.callback<String>(
-                    input,
-                    CallbackConfig.builder().timeout(Duration.ofSeconds(3)).build(),
+                context.callback(
+                    name = input,
+                    type = typeRef<String>(),
+                    options = CallbackOptions(timeout = 3.seconds),
                 ).await()
-            } catch (error: CallbackException) {
+            } catch (error: CallbackFailureException) {
                 "caught_timeout:${error.message}"
             } catch (error: RuntimeException) {
-                "caught_other:${error.javaClass.simpleName}:${error.message}"
+                "caught_other:${error::class.simpleName}:${error.message}"
             }
-        context.wait(Duration.ofSeconds(2), "after-cb")
+        context.wait(2.seconds, "after-cb")
         return outcome
     }
 }
 
-public class CallbackSerdesHappy : KotlinDurableHandler<String, Map<String, Any?>>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): Map<String, Any?> {
+public class CallbackSerdesHappy(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, Map<String, Any?>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(
+        input: String,
+        context: DurableContext,
+    ): Map<String, Any?> {
         val result =
             context.callback(
-                input,
-                TypeToken.get(CustomData::class.java),
-                CallbackConfig.builder().serDes(CustomDataSerDes).build(),
+                name = input,
+                type = typeRef<CustomData>(),
+                options = CallbackOptions(serde = CustomDataSerde),
             ).await()
         return mapOf(
             "received" to
@@ -157,80 +197,99 @@ public class CallbackSerdesHappy : KotlinDurableHandler<String, Map<String, Any?
         )
     }
 
-    public class CustomData {
-        public var id: String = ""
-        public var message: String = ""
-        public var timestamp: Instant = Instant.EPOCH
-    }
+    public data class CustomData(
+        val id: String = "",
+        val message: String = "",
+        val timestamp: Instant = Instant.EPOCH,
+    )
 
-    private object CustomDataSerDes : SerDes {
-        override fun serialize(value: Any?): String? {
-            val data = value as CustomData? ?: return null
+    private object CustomDataSerde : Serde {
+        override fun encode(value: Any?): String {
+            val data = value as CustomData
             return """{"id":"${data.id}","message":"${data.message}","timestamp":"${data.timestamp}"}"""
         }
 
         @Suppress("UNCHECKED_CAST")
-        override fun <T : Any?> deserialize(data: String?, typeToken: TypeToken<T>): T {
-            if (data == null) return null as T
-            return CustomData()
-                .apply {
-                    id = extract(data, "id")
-                    message = extract(data, "message")
-                    timestamp = Instant.parse(extract(data, "timestamp"))
-                } as T
-        }
+        override fun <T> decode(payload: String, type: TypeRef<T>): T =
+            CustomData(
+                id = extract(payload, "id"),
+                message = extract(payload, "message"),
+                timestamp = Instant.parse(extract(payload, "timestamp")),
+            ) as T
 
-        private fun extract(value: String, field: String): String {
+        private fun extract(
+            value: String,
+            field: String,
+        ): String {
             val key = "\"$field\":"
             var start = value.indexOf(key) + key.length
-            while (start < value.length && value[start] == ' ') start++
-            if (start < value.length && value[start] == '"') start++
+            while (start < value.length && value[start] == ' ') start += 1
+            if (start < value.length && value[start] == '"') start += 1
             val end = value.indexOf('"', start)
             return if (end < 0) value.substring(start) else value.substring(start, end)
         }
     }
 }
 
-public class CallbackSerdesNumeric : KotlinDurableHandler<String, Map<String, Any>>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): Map<String, Any> {
+public class CallbackSerdesNumeric(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, Map<String, Int>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(
+        input: String,
+        context: DurableContext,
+    ): Map<String, Int> {
         val value =
             context.callback(
-                input,
-                TypeToken.get(Int::class.javaObjectType),
-                CallbackConfig.builder().serDes(NumericSerDes).build(),
+                name = input,
+                type = typeRef<Int>(),
+                options = CallbackOptions(serde = NumericSerde),
             ).await()
         return mapOf("count" to value, "doubled" to value * 2)
     }
 
-    private object NumericSerDes : SerDes {
-        override fun serialize(value: Any?): String? = (value as Int?)?.toString()
+    private object NumericSerde : Serde {
+        override fun encode(value: Any?): String = value.toString()
 
         @Suppress("UNCHECKED_CAST")
-        override fun <T : Any?> deserialize(data: String?, typeToken: TypeToken<T>): T =
-            data?.trim()?.toInt() as T
+        override fun <T> decode(payload: String, type: TypeRef<T>): T = payload.trim().toInt() as T
     }
 }
 
-public class CallbackTwoSequential : KotlinDurableHandler<List<String>, Map<String, String>>() {
-    override suspend fun handle(input: List<String>, context: KotlinDurableContext): Map<String, String> {
-        val first = context.callback<String>(input[0]).await()
-        val second = context.callback<String>(input[1]).await()
+public class CallbackTwoSequential(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<List<String>, Map<String, String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(
+        input: List<String>,
+        context: DurableContext,
+    ): Map<String, String> {
+        val first = context.callback(input[0], typeRef<String>()).await()
+        val second = context.callback(input[1], typeRef<String>()).await()
         return mapOf("a" to first, "b" to second)
     }
 }
 
-public class CallbackTwoParallel : KotlinDurableHandler<List<String>, Map<String, String>>() {
-    override suspend fun handle(input: List<String>, context: KotlinDurableContext): Map<String, String> {
-        val first = context.callback<String>(input[0])
-        val second = context.callback<String>(input[1])
+public class CallbackTwoParallel(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<List<String>, Map<String, String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(
+        input: List<String>,
+        context: DurableContext,
+    ): Map<String, String> {
+        val first = context.callback(input[0], typeRef<String>())
+        val second = context.callback(input[1], typeRef<String>())
         return mapOf("a" to first.await(), "b" to second.await())
     }
 }
 
-public class CallbackTwoParallelReverse : KotlinDurableHandler<List<String>, Map<String, String>>() {
-    override suspend fun handle(input: List<String>, context: KotlinDurableContext): Map<String, String> {
-        val first = context.callback<String>(input[0])
-        val second = context.callback<String>(input[1])
+public class CallbackTwoParallelReverse(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<List<String>, Map<String, String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(
+        input: List<String>,
+        context: DurableContext,
+    ): Map<String, String> {
+        val first = context.callback(input[0], typeRef<String>())
+        val second = context.callback(input[1], typeRef<String>())
         val secondResult = second.await()
         val firstResult = first.await()
         return mapOf("a" to firstResult, "b" to secondResult)
