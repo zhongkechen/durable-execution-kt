@@ -93,7 +93,13 @@ public class StepPrimitive<T> extends SerializablePrimitive<T> {
 
     private int nextAttempt(Operation existing) {
         var details = existing.stepDetails();
-        return details != null && details.attempt() != null ? details.attempt() + 1 : FIRST_ATTEMPT;
+        if (details != null && details.attempt() != null) {
+            return details.attempt() + 1;
+        }
+        // STARTED/READY proves that an earlier attempt already began. Older or interrupted
+        // checkpoints may omit StepDetails.attempt, but replay must still advance the
+        // StepContext attempt so user code can distinguish the re-execution.
+        return FIRST_ATTEMPT + 1;
     }
 
     private T extensionState(Operation existing) {
