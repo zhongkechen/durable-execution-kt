@@ -14,6 +14,8 @@ import io.github.zhongkechen.durable.ParallelOptions
 import io.github.zhongkechen.durable.RetryPolicy
 import io.github.zhongkechen.durable.StepOptions
 import io.github.zhongkechen.durable.StepScope
+import io.github.zhongkechen.durable.extension.ExtensionRetryDecision
+import io.github.zhongkechen.durable.extension.ExtensionStepConfig
 import io.github.zhongkechen.durable.typeRef
 import kotlin.time.Duration
 import kotlin.test.Test
@@ -83,6 +85,37 @@ class OperationRuntimeTest {
 
             assertEquals(CheckpointAction.RETRY, service.commands.last().action)
             assertEquals(1.seconds, service.commands.last().retryDelay)
+        }
+
+    @Test
+    fun `stateless extension retry does not combine error and payload`() =
+        runtimeTest { runtime, service, _ ->
+            val identity =
+                rootIdentity("1", "flaky", OperationKind.STEP, "Step")
+
+            assertFailsWith<ExecutionSuspended> {
+                runtime.extensionStep(
+                    identity = identity,
+                    type = typeRef<String>(),
+                    config =
+                        ExtensionStepConfig(
+                            retry = {
+                                    _,
+                                    state,
+                                    _,
+                                ->
+                                ExtensionRetryDecision.Retry(state, 1.seconds)
+                            },
+                        ),
+                ) {
+                    error("temporary")
+                }
+            }
+
+            val retry = service.commands.last()
+            assertEquals(CheckpointAction.RETRY, retry.action)
+            assertEquals(null, retry.payload)
+            assertEquals("temporary", retry.error?.message)
         }
 
     @Test
@@ -241,9 +274,12 @@ class OperationRuntimeTest {
             )
             assertEquals(
                 listOf(
-                    listOf(CheckpointAction.START),
-                    listOf(CheckpointAction.START),
-                    listOf(CheckpointAction.START, CheckpointAction.SUCCEED),
+                    listOf(
+                        CheckpointAction.START,
+                        CheckpointAction.START,
+                        CheckpointAction.START,
+                    ),
+                    listOf(CheckpointAction.SUCCEED),
                 ),
                 service.requests.map { request -> request.map { it.action } },
             )
@@ -353,6 +389,28 @@ class OperationRuntimeTest {
             assertEquals("ready", replayedText.await())
             assertFalse(replayCalled)
             replayHarness.close()
+        }
+
+    @Test
+    fun `parallel suspension does not checkpoint cancelled sibling as failed`() =
+        runtimeTest { runtime, service, _ ->
+            assertFailsWith<ExecutionSuspended> {
+                runtime.parallel(
+                    name = "waits",
+                    options = ParallelOptions(maximumConcurrency = 2),
+                ) {
+                    branch("short", typeRef<String>()) {
+                        wait(1.seconds, "short")
+                        "short"
+                    }
+                    branch("long", typeRef<String>()) {
+                        wait(2.seconds, "long")
+                        "long"
+                    }
+                }
+            }
+
+            assertTrue(service.commands.none { it.action == CheckpointAction.FAIL })
         }
 
     @Test

@@ -44,6 +44,7 @@ import io.github.zhongkechen.durable.extension.ExtensionStepConfig
 import io.github.zhongkechen.durable.extension.ExtensionStepResult
 import io.github.zhongkechen.durable.typeRef
 import java.time.Instant
+import java.util.concurrent.CancellationException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
@@ -92,6 +93,7 @@ internal class OperationRuntime(
         type: TypeRef<T>,
         options: StepOptions = StepOptions(),
         combineStartAndTerminal: Boolean = false,
+        startedThisInvocation: Boolean = false,
         block: suspend StepScope.() -> T,
     ): T =
         step(
@@ -99,6 +101,7 @@ internal class OperationRuntime(
             type = type,
             options = options,
             combineStartAndTerminal = combineStartAndTerminal,
+            startedThisInvocation = startedThisInvocation,
             block = block,
         )
 
@@ -107,10 +110,12 @@ internal class OperationRuntime(
         type: TypeRef<T>,
         options: StepOptions = StepOptions(),
         combineStartAndTerminal: Boolean = false,
+        startedThisInvocation: Boolean = false,
+        notifyObservation: Boolean = true,
         block: suspend StepScope.() -> T,
     ): T {
         val existing = ledger.find(identity)
-        notifyObserved(identity, existing)
+        if (notifyObservation) notifyObserved(identity, existing)
         val attempt = (existing?.attempt ?: 0) + 1
         var startCheckpoint: Deferred<Unit>? = null
         var startCommand: CheckpointCommand? = null
@@ -126,7 +131,9 @@ internal class OperationRuntime(
             CheckpointStatus.PENDING ->
                 throw ExecutionSuspended(identity.id, existing.nextAttemptAt)
             CheckpointStatus.STARTED -> {
-                if (options.delivery == DeliverySemantics.AT_MOST_ONCE_PER_RETRY) {
+                if (!startedThisInvocation &&
+                    options.delivery == DeliverySemantics.AT_MOST_ONCE_PER_RETRY
+                ) {
                     return failStep(
                         identity,
                         StepInterruptedException(identity.id),
@@ -163,6 +170,8 @@ internal class OperationRuntime(
                 }
             } catch (suspension: ExecutionSuspended) {
                 throw suspension
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 return failStep(
                     identity,
@@ -256,6 +265,8 @@ internal class OperationRuntime(
                 }
             } catch (suspension: ExecutionSuspended) {
                 throw suspension
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
                 return failExtensionStep(
                     identity = identity,
@@ -431,9 +442,10 @@ internal class OperationRuntime(
         identity: OperationIdentity,
         type: TypeRef<T>,
         config: ExtensionCallbackConfig,
+        notifyObservation: Boolean = true,
     ): CallbackHandle<T> {
         var existing = ledger.find(identity)
-        notifyObserved(identity, existing)
+        if (notifyObservation) notifyObserved(identity, existing)
         if (existing == null) {
             checkpoints.checkpoint(
                 CheckpointCommand(
@@ -477,10 +489,6 @@ internal class OperationRuntime(
                 RuntimeException(existing.error?.message ?: "Checkpointed callback wait failure"),
             )
         }
-        if (existing == null) {
-            checkpoints.checkpoint(CheckpointCommand(identity, CheckpointAction.START))
-        }
-
         val childRuntime =
             OperationRuntime(
                 executionArn = executionArn,
@@ -492,13 +500,55 @@ internal class OperationRuntime(
                 defaultSerde = defaultSerde,
                 plugins = plugins,
             )
+        val callbackIdentity =
+            childRuntime
+                .reserveOperation(null)
+                .identity(OperationKind.CALLBACK, "Callback")
+        val submitterIdentity =
+            childRuntime
+                .reserveOperation(null)
+                .identity(OperationKind.STEP, "Step")
+        val callbackExisting = ledger.find(callbackIdentity)
+        val submitterExisting = ledger.find(submitterIdentity)
+        notifyObserved(callbackIdentity, callbackExisting)
+        notifyObserved(submitterIdentity, submitterExisting)
+        val starts = mutableListOf<CheckpointCommand>()
+        if (existing == null) {
+            starts += CheckpointCommand(identity, CheckpointAction.START)
+        }
+        if (callbackExisting == null) {
+            starts +=
+                CheckpointCommand(
+                    identity = callbackIdentity,
+                    action = CheckpointAction.START,
+                    callbackTimeout = options.callback.timeout,
+                    heartbeatTimeout = options.callback.heartbeatTimeout,
+                )
+        }
+        if (submitterExisting == null) {
+            starts += CheckpointCommand(submitterIdentity, CheckpointAction.START)
+        }
+        if (starts.isNotEmpty()) checkpoints.checkpoint(starts)
+
         return try {
-            val callback = childRuntime.callback(null, type, options.callback)
+            val callback =
+                childRuntime.callback(
+                    identity = callbackIdentity,
+                    type = type,
+                    config =
+                        ExtensionCallbackConfig(
+                            timeout = options.callback.timeout,
+                            heartbeatTimeout = options.callback.heartbeatTimeout,
+                            serde = options.callback.serde,
+                        ),
+                    notifyObservation = false,
+                )
             childRuntime.step(
-                name = null,
+                identity = submitterIdentity,
                 type = typeRef<Unit>(),
                 options = options.submitter,
-                combineStartAndTerminal = true,
+                startedThisInvocation = submitterExisting == null,
+                notifyObservation = false,
             ) {
                 submitter(
                     CallbackSubmitterScopeImpl(
@@ -525,6 +575,8 @@ internal class OperationRuntime(
             normalized
         } catch (suspension: ExecutionSuspended) {
             throw suspension
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
             checkpoints.checkpoint(
                 CheckpointCommand(
@@ -633,6 +685,8 @@ internal class OperationRuntime(
             }
         } catch (suspension: ExecutionSuspended) {
             throw suspension
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
             checkpoints.checkpoint(
                 CheckpointCommand(
@@ -761,6 +815,8 @@ internal class OperationRuntime(
             normalized
         } catch (suspension: ExecutionSuspended) {
             throw suspension
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
             val failure =
                 ExtensionContextFailure(
@@ -1016,6 +1072,8 @@ internal class OperationRuntime(
             normalized
         } catch (suspension: ExecutionSuspended) {
             throw suspension
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Throwable) {
             if (!options.virtual) {
                 checkpoints.checkpoint(
@@ -1182,15 +1240,19 @@ internal class OperationRuntime(
         startCheckpoint: Deferred<Unit>? = null,
     ): T {
         require(delay.isPositive()) { "Retry delay must be positive" }
-        val payload = serde.encode(state)
-        serde.decode(payload, type)
+        val payload =
+            state?.let {
+                serde.encode(it).also { encoded ->
+                    serde.decode(encoded, type)
+                }
+            }
         val resumeAt = Instant.now().plusMillis(delay.inWholeMilliseconds)
         checkpoints.checkpoint(
             CheckpointCommand(
                 identity = identity,
                 action = CheckpointAction.RETRY,
                 payload = payload,
-                error = error?.toCheckpointError(),
+                error = error?.takeIf { payload == null }?.toCheckpointError(),
                 retryDelay = delay,
             ),
         )
