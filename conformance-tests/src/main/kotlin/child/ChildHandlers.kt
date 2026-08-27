@@ -1,92 +1,103 @@
-// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0
 package child
 
-import java.time.Duration
+import io.github.zhongkechen.durable.ChildOptions
+import io.github.zhongkechen.durable.DurableContext
+import io.github.zhongkechen.durable.DurableHandler
+import io.github.zhongkechen.durable.DurableRuntimeConfig
+import io.github.zhongkechen.durable.RetryJitter
+import io.github.zhongkechen.durable.RetryPolicy
+import io.github.zhongkechen.durable.Serde
+import io.github.zhongkechen.durable.StepOptions
+import io.github.zhongkechen.durable.TypeRef
+import io.github.zhongkechen.durable.child
+import io.github.zhongkechen.durable.step
+import io.github.zhongkechen.durable.typeRef
 import kotlinx.coroutines.delay
-import software.amazon.lambda.durable.TypeToken
-import software.amazon.lambda.durable.config.RunInChildContextConfig
-import software.amazon.lambda.durable.config.StepConfig
-import software.amazon.lambda.durable.kotlin.KotlinDurableContext
-import software.amazon.lambda.durable.kotlin.KotlinDurableHandler
-import software.amazon.lambda.durable.kotlin.KotlinDurableRuntime
-import software.amazon.lambda.durable.logging.LoggerConfig
-import software.amazon.lambda.durable.retry.JitterStrategy
-import software.amazon.lambda.durable.retry.RetryDecision
-import software.amazon.lambda.durable.retry.RetryStrategies
-import software.amazon.lambda.durable.serde.SerDes
+import kotlin.time.Duration.Companion.seconds
 
-public class ChildBasic : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("child-basic") {
+public class ChildBasic(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child("child-basic") {
             step<String>("inner-step") { input }
         }
 }
 
-public class ChildWithName : KotlinDurableHandler<Map<String, String>, String>() {
-    override suspend fun handle(input: Map<String, String>, context: KotlinDurableContext): String =
-        context.childContext(requireNotNull(input["name"])) {
+public class ChildWithName(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Map<String, String>, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(
+        input: Map<String, String>,
+        context: DurableContext,
+    ): String =
+        context.child(requireNotNull(input["name"])) {
             step<String>("step") { requireNotNull(input["value"]) }
         }
 }
 
-public class ChildMultipleSteps : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("multi-step") {
+public class ChildMultipleSteps(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child("multi-step") {
             val first = step<String>("step-one") { input }
             step("step-two") { first }
         }
 }
 
-public class ChildWithError : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String =
-        context.childContext("failing-child") {
+public class ChildWithError(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String =
+        context.child("failing-child") {
             step(
-                "failing-step",
-                StepConfig.builder().retryStrategy(RetryStrategies.Presets.NO_RETRY).build(),
+                name = "failing-step",
+                options = StepOptions(retry = RetryPolicy.none),
             ) {
                 error("Something went wrong in child")
             }
         }
 }
 
-public class ChildErrorCaught : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        try {
-            context.childContext<String>("failing-child") {
+public class ChildErrorCaught(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        runCatching {
+            context.child<String>("failing-child") {
                 step(
-                    "failing-step",
-                    StepConfig.builder().retryStrategy(RetryStrategies.Presets.NO_RETRY).build(),
+                    name = "failing-step",
+                    options = StepOptions(retry = RetryPolicy.none),
                 ) {
                     error("Something went wrong")
                 }
             }
-        } catch (_: RuntimeException) {
-            // Continue with recovery.
         }
         return context.step("recovery-step") { input }
     }
 }
 
-public class ChildNested : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("outer") {
+public class ChildNested(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child("outer") {
             step<String>("outer-step") { input }
-            childContext("inner") {
+            child("inner") {
                 step<String>("inner-step") { input }
             }
         }
 }
 
-public class ChildWithRetry : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("retry-child") {
+public class ChildWithRetry(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child("retry-child") {
             step(
-                "retry-step",
-                StepConfig.builder()
-                    .retryStrategy { _, attempt ->
-                        if (attempt >= 3) RetryDecision.fail() else RetryDecision.retry(Duration.ofSeconds(1))
-                    }.build(),
+                name = "retry-step",
+                options = StepOptions(retry = RetryPolicy.fixed(maxAttempts = 3, delay = 1.seconds)),
             ) {
                 if (attempt < 2) error("Attempt $attempt failed")
                 input
@@ -94,68 +105,74 @@ public class ChildWithRetry : KotlinDurableHandler<String, String>() {
         }
 }
 
-public class ChildRetryExhaustion : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String =
-        context.childContext("exhaust-child") {
+public class ChildRetryExhaustion(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String =
+        context.child("exhaust-child") {
             step(
-                "always-fails",
-                StepConfig.builder()
-                    .retryStrategy(
-                        RetryStrategies.exponentialBackoff(
-                            2,
-                            Duration.ofSeconds(1),
-                            Duration.ofSeconds(10),
-                            1.0,
-                            JitterStrategy.NONE,
-                        ),
-                    ).build(),
+                name = "always-fails",
+                options =
+                    StepOptions(
+                        retry =
+                            RetryPolicy.exponential(
+                                maxAttempts = 2,
+                                initialDelay = 1.seconds,
+                                maximumDelay = 10.seconds,
+                                multiplier = 1.0,
+                                jitter = RetryJitter.NONE,
+                            ),
+                    ),
             ) {
                 error("Always fails")
             }
         }
 }
 
-public class ChildReplay : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+public class ChildReplay(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
         val result =
-            context.childContext<String>("cached-child") {
+            context.child<String>("cached-child") {
                 step<String>("compute") { input }
             }
-        context.wait(Duration.ofSeconds(2))
+        context.wait(2.seconds)
         return result
     }
 }
 
-public class ChildStepAndWait : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("mixed-ops") {
+public class ChildStepAndWait(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child("mixed-ops") {
             step<String>("do-work") { input }
-            wait(Duration.ofSeconds(2))
+            wait(2.seconds)
             input
         }
 }
 
-public class ChildLargePayload :
-    KotlinDurableHandler<Any?, String>(
-        KotlinDurableRuntime.config {
-            withLoggerConfig(LoggerConfig.withReplayLogging())
-        },
-    ) {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String {
+public class ChildLargePayload(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String {
         val result =
-            context.childContext<String>("large-data-processor") {
-                javaContext.logger.info("{}", input)
+            context.child<String>("large-data-processor") {
+                logger.info("{}", input)
                 val seed = step<String>("fetch-seed") { "seed" }
                 seed.repeat(300_000)
             }
-        context.wait(Duration.ofSeconds(2))
+        context.wait(2.seconds)
         return result
     }
 }
 
-public class ChildInterrupted : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext("interrupted-child") {
+public class ChildInterrupted(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child("interrupted-child") {
             val shouldCrash = !isReplaying
             step<String>("crashable-step") {
                 if (shouldCrash) {
@@ -167,66 +184,78 @@ public class ChildInterrupted : KotlinDurableHandler<String, String>() {
         }
 }
 
-public class ChildWaitReplay : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        context.childContext<String>("wait-child") {
-            wait(Duration.ofSeconds(1))
+public class ChildWaitReplay(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        context.child<String>("wait-child") {
+            wait(1.seconds)
             input
         }
         return context.step("after-child") { input }
     }
 }
 
-public class ChildCustomSerdes : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String =
-        context.childContext(
-            "serdes-child",
-            RunInChildContextConfig.builder().serDes(UppercaseSerDes).build(),
+public class ChildCustomSerdes(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String =
+        context.child(
+            name = "serdes-child",
+            options = ChildOptions(serde = UppercaseSerde),
         ) {
             step<String>("return-input") { input }
         }
 
-    private object UppercaseSerDes : SerDes {
-        override fun serialize(value: Any?): String? = (value as String?)?.uppercase()
+    private object UppercaseSerde : Serde {
+        override fun encode(value: Any?): String = value.toString().uppercase()
 
         @Suppress("UNCHECKED_CAST")
-        override fun <T : Any?> deserialize(data: String?, typeToken: TypeToken<T>): T = data as T
+        override fun <T> decode(payload: String, type: TypeRef<T>): T = payload as T
     }
 }
 
-public class ChildErrorNoStep : KotlinDurableHandler<Any?, String>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String =
-        context.childContext("direct-error") {
+public class ChildErrorNoStep(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String =
+        context.child("direct-error") {
             error("direct error")
         }
 }
 
-public class ChildNullResult : KotlinDurableHandler<Any?, String?>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): String? =
-        context.childContext<String?>("null-child") { null }
+public class ChildNullResult(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, String?>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): String? =
+        context.child<String?>("null-child") { null }
 }
 
-public class ChildPrintOnly : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
+public class ChildPrintOnly(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
         val result =
-            context.childContext<String>("print-child") {
-                javaContext.logger.info("{}", input)
+            context.child<String>("print-child") {
+                logger.info("{}", input)
                 input
             }
-        context.wait(Duration.ofSeconds(1))
+        context.wait(1.seconds)
         return result
     }
 }
 
-public class ChildStepWaitAfter : KotlinDurableHandler<String, String>() {
-    override suspend fun handle(input: String, context: KotlinDurableContext): String {
-        context.childContext<String>("step-wait-child") {
+public class ChildStepWaitAfter(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<String, String>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: String, context: DurableContext): String {
+        context.child<String>("step-wait-child") {
             step<String>("inner-work") { input }
-            wait(Duration.ofSeconds(2))
+            wait(2.seconds)
             input
         }
         val result = context.step<String>("outer-work") { input }
-        context.wait(Duration.ofSeconds(2))
+        context.wait(2.seconds)
         return result
     }
 }

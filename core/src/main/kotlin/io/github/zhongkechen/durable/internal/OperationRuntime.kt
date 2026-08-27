@@ -105,11 +105,13 @@ internal class OperationRuntime(
             val serde = options.serde ?: defaultSerde
             val payload = serde.encode(value)
             val normalized = serde.decode(payload, type)
+            val replayChildren = payload.encodeToByteArray().size >= LARGE_CONTEXT_RESULT_BYTES
             checkpoints.checkpoint(
                 CheckpointCommand(
                     identity = identity,
                     action = CheckpointAction.SUCCEED,
-                    payload = payload,
+                    payload = if (replayChildren) "" else payload,
+                    replayChildren = replayChildren,
                 ),
             )
             normalized
@@ -896,3 +898,5 @@ private fun Throwable.toCheckpointError(): CheckpointError =
                 "${frame.className}|${frame.methodName}|${frame.fileName.orEmpty()}|${frame.lineNumber}"
             },
     )
+
+private const val LARGE_CONTEXT_RESULT_BYTES: Int = 256 * 1024
