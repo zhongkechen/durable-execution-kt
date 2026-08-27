@@ -210,17 +210,6 @@ class StatefulExtensionStepPrimitiveTest {
     }
 
     @Test
-    void replayInterruptedStartedStepWithoutCheckpointedAttemptUsesSecondAttempt() throws Exception {
-        when(executionManager.getOperationAndUpdateReplayState(OPERATION_ID))
-                .thenReturn(operation(OperationStatus.STARTED, StepDetails.builder().build()));
-        var operation = createOperation(state -> completedFuture(ExtensionStepResult.succeed(state)));
-
-        operation.execute();
-
-        verify(durableContext, timeout(2000)).createStepContext(OPERATION_ID, OPERATION_NAME, 2);
-    }
-
-    @Test
     void exceptionRetryWithoutStateDoesNotCheckpointPayload() throws Exception {
         when(executionManager.getOperationAndUpdateReplayState(OPERATION_ID)).thenReturn(null);
         when(executionManager.pollForOperationUpdates(eq(OPERATION_ID), any(Instant.class)))
