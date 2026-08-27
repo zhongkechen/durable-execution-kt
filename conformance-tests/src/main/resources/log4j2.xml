@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
 <Configuration status="WARN">
     <Appenders>
         <Lambda name="Lambda" format="${env:AWS_LAMBDA_LOG_FORMAT:-TEXT}">

@@ -1,115 +1,108 @@
 package plugin
 
-import software.amazon.lambda.durable.plugin.DurableExecutionPlugin
-import software.amazon.lambda.durable.plugin.InvocationEndInfo
-import software.amazon.lambda.durable.plugin.InvocationInfo
-import software.amazon.lambda.durable.plugin.OperationEndInfo
-import software.amazon.lambda.durable.plugin.OperationInfo
-import software.amazon.lambda.durable.plugin.UserFunctionEndInfo
-import software.amazon.lambda.durable.plugin.UserFunctionStartInfo
+import io.github.zhongkechen.durable.DurablePlugin
+import io.github.zhongkechen.durable.FunctionAttemptEnded
+import io.github.zhongkechen.durable.FunctionAttemptStarted
+import io.github.zhongkechen.durable.InvocationEnded
+import io.github.zhongkechen.durable.InvocationStarted
+import io.github.zhongkechen.durable.OperationSnapshot
 
-public class ConformanceLoggingPlugin(
+public open class ConformanceLoggingPlugin(
     private val label: String,
-) : DurableExecutionPlugin {
-    @Volatile
+) : DurablePlugin {
     private var executionArn: String? = null
 
-    override fun onInvocationStart(info: InvocationInfo) {
-        executionArn = info.durableExecutionArn()
+    override fun invocationStarted(info: InvocationStarted) {
+        executionArn = info.executionArn
         emit(
             "plugin" to label,
             "hook" to "invocation-start",
-            "first" to info.isFirstInvocation,
+            "first" to info.firstInvocation,
             "durableExecutionArn" to executionArn,
         )
     }
 
-    override fun onInvocationEnd(info: InvocationEndInfo) {
+    override fun invocationEnded(info: InvocationEnded) {
         emit(
             "plugin" to label,
             "hook" to "invocation-end",
-            "status" to info.invocationStatus().name,
+            "status" to info.status.name,
             "durableExecutionArn" to executionArn,
         )
     }
 
-    override fun onOperationStart(info: OperationInfo) {
-        if (!info.type().isStep()) return
+    override fun operationStarted(operation: OperationSnapshot) {
+        if (!operation.isStep()) return
         emit(
             "plugin" to label,
             "hook" to "operation-start",
-            "op" to info.id(),
+            "op" to operation.id,
             "durableExecutionArn" to executionArn,
         )
     }
 
-    override fun onOperationEnd(info: OperationEndInfo) {
-        if (!info.type().isStep()) return
+    override fun operationEnded(operation: OperationSnapshot) {
+        if (!operation.isStep()) return
         emit(
             "plugin" to label,
             "hook" to "operation-end",
-            "op" to info.id(),
-            "status" to info.status(),
+            "op" to operation.id,
+            "status" to operation.status,
             "durableExecutionArn" to executionArn,
         )
     }
 
-    override fun onUserFunctionStart(info: UserFunctionStartInfo) {
-        val attempt = info.attempt() ?: return
-        if (!info.type().isStep()) return
+    override fun functionStarted(info: FunctionAttemptStarted) {
+        if (!info.operation.isStep() || info.operation.attempt == null) return
         emit(
             "plugin" to label,
             "hook" to "attempt-start",
-            "n" to attempt,
-            "op" to info.id(),
+            "n" to info.operation.attempt,
+            "op" to info.operation.id,
             "durableExecutionArn" to executionArn,
         )
     }
 
-    override fun onUserFunctionEnd(info: UserFunctionEndInfo) {
-        val attempt = info.attempt() ?: return
-        if (!info.type().isStep()) return
+    override fun functionEnded(info: FunctionAttemptEnded) {
+        if (!info.operation.isStep() || info.operation.attempt == null) return
         emit(
             "plugin" to label,
             "hook" to "attempt-end",
-            "n" to attempt,
-            "outcome" to if (info.succeeded()) "SUCCEEDED" else "FAILED",
-            "op" to info.id(),
+            "n" to info.operation.attempt,
+            "outcome" to if (info.succeeded) "SUCCEEDED" else "FAILED",
+            "op" to info.operation.id,
             "durableExecutionArn" to executionArn,
         )
     }
 }
 
-public class FaultyConformancePlugin : DurableExecutionPlugin {
-    @Volatile
+public class FaultyConformancePlugin : DurablePlugin {
     private var executionArn: String? = null
 
-    override fun onInvocationStart(info: InvocationInfo) {
-        executionArn = info.durableExecutionArn()
-        failAfterLog("invocation-start")
+    override fun invocationStarted(info: InvocationStarted) {
+        executionArn = info.executionArn
+        fail("invocation-start")
     }
 
-    override fun onInvocationEnd(info: InvocationEndInfo) {
-        failAfterLog("invocation-end")
+    override fun invocationEnded(info: InvocationEnded) = fail("invocation-end")
+
+    override fun operationStarted(operation: OperationSnapshot) {
+        if (operation.isStep()) fail("operation-start")
     }
 
-    override fun onOperationStart(info: OperationInfo) {
-        if (info.type().isStep()) failAfterLog("operation-start")
+    override fun operationEnded(operation: OperationSnapshot) {
+        if (operation.isStep()) fail("operation-end")
     }
 
-    override fun onOperationEnd(info: OperationEndInfo) {
-        if (info.type().isStep()) failAfterLog("operation-end")
+    override fun functionStarted(info: FunctionAttemptStarted) {
+        if (info.operation.isStep()) fail("attempt-start")
     }
 
-    override fun onUserFunctionStart(info: UserFunctionStartInfo) {
-        if (info.type().isStep()) failAfterLog("attempt-start")
+    override fun functionEnded(info: FunctionAttemptEnded) {
+        if (info.operation.isStep()) fail("attempt-end")
     }
 
-    override fun onUserFunctionEnd(info: UserFunctionEndInfo) {
-        if (info.type().isStep()) failAfterLog("attempt-end")
-    }
-
-    private fun failAfterLog(hook: String): Nothing {
+    private fun fail(hook: String): Nothing {
         emit(
             "plugin" to "CONFPLUGIN-FAULTY",
             "hook" to hook,
@@ -119,26 +112,32 @@ public class FaultyConformancePlugin : DurableExecutionPlugin {
     }
 }
 
-private fun String?.isStep(): Boolean = this == "STEP"
+internal fun OperationSnapshot.isStep(): Boolean = type == "STEP"
 
-private fun emit(vararg fields: Pair<String, Any?>) {
+internal fun OperationSnapshot.isWait(): Boolean = type == "WAIT"
+
+internal fun OperationSnapshot.isContext(): Boolean = type == "CONTEXT"
+
+internal fun OperationSnapshot.isBranch(): Boolean = subtype.equals("ParallelBranch", ignoreCase = true)
+
+internal fun emit(vararg fields: Pair<String, Any?>) {
     println(
         fields
             .filter { it.second != null }
             .joinToString(prefix = "{", postfix = "}") { (key, value) ->
-                val encoded =
+                val rendered =
                     when (value) {
                         is Boolean, is Number -> value.toString()
-                        else -> "\"${value.toString().jsonEscaped()}\""
+                        else -> "\"${value.toString().escapeJson()}\""
                     }
-                "\"${key.jsonEscaped()}\": $encoded"
+                "\"${key.escapeJson()}\": $rendered"
             },
     )
 }
 
-private fun String.jsonEscaped(): String =
+private fun String.escapeJson(): String =
     buildString(length) {
-        for (character in this@jsonEscaped) {
+        for (character in this@escapeJson) {
             when (character) {
                 '\\' -> append("\\\\")
                 '"' -> append("\\\"")

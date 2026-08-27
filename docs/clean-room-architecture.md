@@ -15,9 +15,7 @@ The runtime is being rebuilt as an independent Kotlin implementation.
 
 - `core`: public contracts and the durable execution engine.
 - `testing`: local and cloud test utilities.
-- `sdk`: Kotlin coroutine conveniences built on `core`.
 - `conformance-tests`: executable behavior specifications.
 
-The legacy `java-core` and `java-testing` modules will be removed after their
-behavior has been replaced and the new modules pass the complete conformance
-suite.
+The previous vendored implementation has been removed. Runtime, testing, and
+conformance code are Kotlin-only.
