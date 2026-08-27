@@ -1,6 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import com.amazonaws.services.lambda.runtime.RequestStreamHandler
+import io.github.zhongkechen.durable.DurableRuntimeConfig
+import io.github.zhongkechen.durable.testing.LocalDurableRunner
+import io.github.zhongkechen.durable.testing.LocalExecutionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import map.MapBasic
@@ -22,47 +26,45 @@ import software.amazon.lambda.durable.testing.LocalDurableTestRunner
 class ConcurrencyHandlersTest {
     @Test
     fun mapHandlersComplete() {
-        assertEquals(listOf("Hello, World!", "Hello, Kiro!"), run(MapBasic(), typeToken<List<String>>()))
+        assertEquals(
+            listOf("Hello, World!", "Hello, Kiro!"),
+            runClean<Any?, List<String>>(null) { MapBasic(it) },
+        )
         assertEquals(
             "FAILURE_TOLERANCE_EXCEEDED",
-            run(MapFailFast(), typeToken<Map<String, Any>>())["completionReason"],
+            runClean<Any?, Map<String, Any>>(null) { MapFailFast(it) }["completionReason"],
         )
-        assertEquals(listOf("r0", "r1"), run(MapSuspendIteration(), typeToken<List<String>>()))
-        assertEquals(listOf("X", "Y"), run(MapItemSerdes(), typeToken<List<String>>()))
-        assertEquals(listOf("X", "Y"), run(MapOpSerde(), typeToken<List<String>>()))
-        assertEquals(listOf("X", "Y"), run(MapOpSerdeReplay(), typeToken<List<String>>()))
+        assertEquals(listOf("r0", "r1"), runClean<Any?, List<String>>(null) { MapSuspendIteration(it) })
+        assertEquals(listOf("X", "Y"), runClean<Any?, List<String>>(null) { MapItemSerdes(it) })
+        assertEquals(listOf("X", "Y"), runClean<Any?, List<String>>(null) { MapOpSerde(it) })
+        assertEquals(listOf("X", "Y"), runClean<Any?, List<String>>(null) { MapOpSerdeReplay(it) })
     }
 
     @Test
     fun mapKotlinSpecificCapabilitiesComplete() {
         assertEquals(
             listOf(2, 4),
-            run(
-                MapItemsOnly(),
-                listOf(1, 2),
-                typeToken<List<Int>>(),
-                typeToken<List<Int>>(),
-            ),
+            runClean(listOf(1, 2)) { MapItemsOnly(it) },
         )
-        val handler = MapThrowIfError()
-        @Suppress("UNCHECKED_CAST")
-        val inputType = TypeToken.get(Any::class.java) as TypeToken<Any?>
-        val runner = LocalDurableTestRunner.create(inputType, handler)
-        assertEquals(ExecutionStatus.FAILED, runner.runUntilComplete(null).status)
+        val runner =
+            LocalDurableRunner.create<Any?, List<String>> { config ->
+                MapThrowIfError(config)
+            }
+        assertEquals(LocalExecutionStatus.FAILED, runner.runUntilComplete(null).status)
     }
 
     @Test
     fun parallelHandlersComplete() {
-        assertEquals(listOf("task-1", "task-2"), run(ParallelBasic(), typeToken<List<String>>()))
+        assertEquals(listOf("task-1", "task-2"), runLegacy(ParallelBasic(), typeToken<List<String>>()))
         assertEquals(
             "FAILURE_TOLERANCE_EXCEEDED",
-            run(ParallelFailFast(), typeToken<Map<String, Any>>())["completionReason"],
+            runLegacy(ParallelFailFast(), typeToken<Map<String, Any>>())["completionReason"],
         )
-        assertEquals(listOf(listOf("i1", "i2")), run(ParallelNested(), TypeToken.get(Any::class.java)))
+        assertEquals(listOf(listOf("i1", "i2")), runLegacy(ParallelNested(), TypeToken.get(Any::class.java)))
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <O> run(handler: AsyncDurableHandler<Any?, O>, outputType: TypeToken<O>): O {
+    private fun <O> runLegacy(handler: AsyncDurableHandler<Any?, O>, outputType: TypeToken<O>): O {
         val inputType = TypeToken.get(Any::class.java) as TypeToken<Any?>
         val runner = LocalDurableTestRunner.create(inputType, handler).withOutputType(outputType)
         val result = runner.runUntilComplete(null)
@@ -79,16 +81,13 @@ class ConcurrencyHandlersTest {
         return result.getResult(outputType)
     }
 
-    private fun <I, O> run(
-        handler: AsyncDurableHandler<I, O>,
+    private inline fun <reified I, reified O> runClean(
         input: I,
-        inputType: TypeToken<I>,
-        outputType: TypeToken<O>,
+        noinline handler: (DurableRuntimeConfig) -> RequestStreamHandler,
     ): O {
-        val runner = LocalDurableTestRunner.create(inputType, handler).withOutputType(outputType)
-        val result = runner.runUntilComplete(input)
-        assertEquals(ExecutionStatus.SUCCEEDED, result.status)
-        return result.getResult(outputType)
+        val result = LocalDurableRunner.create<I, O>(handlerFactory = handler).runUntilComplete(input)
+        assertEquals(LocalExecutionStatus.SUCCEEDED, result.status, result.error?.message)
+        return requireNotNull(result.result)
     }
 
     private inline fun <reified T> typeToken(): TypeToken<T> = object : TypeToken<T>() {}

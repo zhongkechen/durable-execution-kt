@@ -1,69 +1,87 @@
-// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0
 package map
 
+import io.github.zhongkechen.durable.BatchCompletion
+import io.github.zhongkechen.durable.CompletionPolicy
+import io.github.zhongkechen.durable.DurableContext
+import io.github.zhongkechen.durable.DurableHandler
+import io.github.zhongkechen.durable.DurableRuntimeConfig
+import io.github.zhongkechen.durable.ItemResult
+import io.github.zhongkechen.durable.MapOptions
+import io.github.zhongkechen.durable.MapResult
+import io.github.zhongkechen.durable.Nesting
+import io.github.zhongkechen.durable.Serde
+import io.github.zhongkechen.durable.TypeRef
+import io.github.zhongkechen.durable.step
+import io.github.zhongkechen.durable.typeRef
 import kotlin.time.Duration.Companion.seconds
-import software.amazon.lambda.durable.kotlin.CompletionPolicy
-import software.amazon.lambda.durable.kotlin.KotlinDurableContext
-import software.amazon.lambda.durable.kotlin.KotlinDurableHandler
-import software.amazon.lambda.durable.kotlin.KotlinDurableRuntime
-import software.amazon.lambda.durable.kotlin.Nesting
-import software.amazon.lambda.durable.kotlin.throwIfFailed
-import software.amazon.lambda.durable.TypeToken
-import software.amazon.lambda.durable.model.ConcurrencyCompletionStatus
-import software.amazon.lambda.durable.model.MapResult
-import software.amazon.lambda.durable.serde.SerDes
 
-public class MapBasic : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
+public class MapBasic(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
         context.map(
             name = "map",
             items = listOf("World", "Kiro"),
-            maxConcurrency = 1,
+            outputType = typeRef(),
+            options = MapOptions(maximumConcurrency = 1),
         ) { item, index ->
             step<String>("step-$index") { "Hello, $item!" }
-        }.results()
+        }.values()
 }
 
-public class MapItemIndex : KotlinDurableHandler<Any?, List<Int>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<Int> =
+public class MapItemIndex(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<Int>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<Int> =
         context.map(
             name = "indexed",
             items = listOf(10, 20, 30),
-            maxConcurrency = 1,
+            outputType = typeRef(),
+            options = MapOptions(maximumConcurrency = 1),
         ) { item, index ->
             item + index
-        }.results()
+        }.values()
 }
 
-public class MapItemsOnly : KotlinDurableHandler<List<Int>, List<Int>>() {
-    override suspend fun handle(input: List<Int>, context: KotlinDurableContext): List<Int> =
+public class MapItemsOnly(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<List<Int>, List<Int>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: List<Int>, context: DurableContext): List<Int> =
         context.map(
             items = input.ifEmpty { listOf(1, 2) },
-            maxConcurrency = 1,
+            outputType = typeRef(),
+            options = MapOptions(maximumConcurrency = 1),
         ) { item, _ ->
             item * 2
-        }.results()
+        }.values()
 }
 
-public class MapEmpty :
-    KotlinDurableHandler<Any?, List<String>>(
-        KotlinDurableRuntime.config {
-            withCheckpointEmptyMap(true)
-        },
-    ) {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
-        context.map<String, String>(name = "empty", items = emptyList()) { item, _ -> item }.results()
+public class MapEmpty(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
+        context.map(
+            name = "empty",
+            items = emptyList<String>(),
+            outputType = typeRef(),
+        ) { item, _ -> item }
+            .values()
 }
 
-public class MapFailFast : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class MapFailFast(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.map(
                 name = "failfast",
                 items = listOf("ok", "fail", "never"),
-                maxConcurrency = 1,
-                completion = CompletionPolicy.allSuccessful,
+                outputType = typeRef(),
+                options =
+                    MapOptions(
+                        maximumConcurrency = 1,
+                        completion = CompletionPolicy.TolerateFailures(count = 0),
+                    ),
             ) { item, _ ->
                 if (item == "fail") error("item failed")
                 item
@@ -72,42 +90,58 @@ public class MapFailFast : KotlinDurableHandler<Any?, Map<String, Any>>() {
         )
 }
 
-public class MapMinSuccessful : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class MapMinSuccessful(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.map(
                 name = "min-successful",
                 items = listOf("s0", "s1", "s2", "s3"),
-                maxConcurrency = 1,
-                completion = CompletionPolicy.minSuccessful(2),
-            ) { item, _ ->
-                item
-            },
+                outputType = typeRef(),
+                options =
+                    MapOptions(
+                        maximumConcurrency = 1,
+                        completion = CompletionPolicy.MinimumSuccessful(2),
+                    ),
+            ) { item, _ -> item },
         ).filterKeys { it != "failureCount" }
 }
 
-public class MapThrowIfError : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
+public class MapThrowIfError(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
         context.map(
             name = "throwing",
             items = listOf("fail", "never"),
-            maxConcurrency = 1,
-            completion = CompletionPolicy.allSuccessful,
+            outputType = typeRef(),
+            options =
+                MapOptions(
+                    maximumConcurrency = 1,
+                    completion = CompletionPolicy.TolerateFailures(count = 0),
+                ),
         ) { item, _ ->
             if (item == "fail") error("item failed")
             item
         }.throwIfFailed()
-            .results()
+            .values()
 }
 
-public class MapToleratedWithin : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class MapToleratedWithin(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.map(
                 name = "tolerated",
                 items = listOf("s0", "fail", "s2"),
-                maxConcurrency = 1,
-                completion = CompletionPolicy.toleratedFailures(1),
+                outputType = typeRef(),
+                options =
+                    MapOptions(
+                        maximumConcurrency = 1,
+                        completion = CompletionPolicy.TolerateFailures(count = 1),
+                    ),
             ) { item, _ ->
                 if (item == "fail") error("item failed")
                 item
@@ -116,14 +150,20 @@ public class MapToleratedWithin : KotlinDurableHandler<Any?, Map<String, Any>>()
         )
 }
 
-public class MapToleratedExceeded : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class MapToleratedExceeded(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.map(
                 name = "tolerated-exceeded",
                 items = listOf("f0", "f1", "never"),
-                maxConcurrency = 1,
-                completion = CompletionPolicy.toleratedFailures(1),
+                outputType = typeRef(),
+                options =
+                    MapOptions(
+                        maximumConcurrency = 1,
+                        completion = CompletionPolicy.TolerateFailures(count = 1),
+                    ),
             ) { item, _ ->
                 if (item != "never") error("item failed")
                 item
@@ -131,14 +171,20 @@ public class MapToleratedExceeded : KotlinDurableHandler<Any?, Map<String, Any>>
         )
 }
 
-public class MapToleratedPct : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> =
+public class MapToleratedPct(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> =
         summary(
             context.map(
                 name = "tolerated-pct",
                 items = listOf("f0", "f1", "never", "never"),
-                maxConcurrency = 1,
-                completion = CompletionPolicy.toleratedFailurePercentage(0.25),
+                outputType = typeRef(),
+                options =
+                    MapOptions(
+                        maximumConcurrency = 1,
+                        completion = CompletionPolicy.TolerateFailures(percentage = 25.0),
+                    ),
             ) { item, _ ->
                 if (item != "never") error("item failed")
                 item
@@ -146,106 +192,135 @@ public class MapToleratedPct : KotlinDurableHandler<Any?, Map<String, Any>>() {
         )
 }
 
-public class MapConcurrent : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
+public class MapConcurrent(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
         context.map(
             name = "concurrent",
             items = listOf("r0", "r1", "r2"),
-            maxConcurrency = 2,
-        ) { item, _ ->
-            item
-        }.results()
+            outputType = typeRef(),
+            options = MapOptions(maximumConcurrency = 2),
+        ) { item, _ -> item }
+            .values()
 }
 
-public class MapFlat : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
+public class MapFlat(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
         context.map(
             name = "flat",
             items = listOf("fa", "fb"),
-            maxConcurrency = 1,
-            nesting = Nesting.FLAT,
+            outputType = typeRef(),
+            options =
+                MapOptions(
+                    maximumConcurrency = 1,
+                    nesting = Nesting.FLAT,
+                ),
         ) { item, index ->
             step<String>("step-$index") { item }
-        }.results()
+        }.values()
 }
 
-public class MapItemNamer : KotlinDurableHandler<List<Int>, List<Int>>() {
-    override suspend fun handle(input: List<Int>, context: KotlinDurableContext): List<Int> =
+public class MapItemNamer(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<List<Int>, List<Int>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: List<Int>, context: DurableContext): List<Int> =
         context.map(
             name = "named-items",
             items = input,
-            maxConcurrency = 1,
-            itemName = { item, _ -> "item-$item" },
-        ) { item, _ ->
-            item * 10
-        }.results()
+            outputType = typeRef(),
+            options =
+                MapOptions(
+                    maximumConcurrency = 1,
+                    itemName = { item, _ -> "item-$item" },
+                ),
+        ) { item, _ -> item * 10 }
+            .values()
 }
 
-public class MapItemSerdes : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
+public class MapItemSerdes(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
         context.map(
             name = "serdes",
             items = listOf("x", "y"),
-            maxConcurrency = 1,
-            itemSerDes = WrappedItemSerDes,
-        ) { item, _ ->
-            item.uppercase()
-        }.results()
+            outputType = typeRef(),
+            options =
+                MapOptions(
+                    maximumConcurrency = 1,
+                    itemSerde = WrappedItemSerde,
+                ),
+        ) { item, _ -> item.uppercase() }
+            .values()
 }
 
-public class MapSuspendIteration : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
+public class MapSuspendIteration(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
         context.map(
             name = "suspend",
             items = listOf("r0", "r1"),
-            maxConcurrency = 1,
+            outputType = typeRef(),
+            options = MapOptions(maximumConcurrency = 1),
         ) { item, index ->
             if (index == 1) wait(1.seconds)
             step<String>("step-$index") { item }
-        }.results()
+        }.values()
 }
 
-public class MapLargeResult : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> {
+public class MapLargeResult(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> {
         val big = "x".repeat(70_000)
         val result =
             context.map(
                 name = "large",
                 items = listOf(0, 1, 2, 3),
-                maxConcurrency = 1,
-            ) { _, _ ->
-                big
-            }
+                outputType = typeRef<String>(),
+                options = MapOptions(maximumConcurrency = 1),
+            ) { _, _ -> big }
         return mapOf(
-            "successCount" to result.succeeded().size,
-            "totalCount" to result.succeeded().size + result.failed().size,
+            "successCount" to result.successes.size,
+            "totalCount" to result.successes.size + result.failures.size,
         )
     }
 }
 
-public class MapThenWait : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
+public class MapThenWait(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
         val result =
             context.map(
                 name = "then-wait",
                 items = listOf("a", "b"),
-                maxConcurrency = 1,
-            ) { item, _ ->
-                item.uppercase()
-            }
+                outputType = typeRef<String>(),
+                options = MapOptions(maximumConcurrency = 1),
+            ) { item, _ -> item.uppercase() }
         context.wait(1.seconds)
-        return result.results()
+        return result.values()
     }
 }
 
-public class MapFailThenWait : KotlinDurableHandler<Any?, Map<String, Any>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): Map<String, Any> {
+public class MapFailThenWait(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, Map<String, Any>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): Map<String, Any> {
         val result =
             context.map(
                 name = "fail-then-wait",
                 items = listOf("ok", "fail"),
-                maxConcurrency = 1,
-                completion = CompletionPolicy.toleratedFailures(1),
+                outputType = typeRef<String>(),
+                options =
+                    MapOptions(
+                        maximumConcurrency = 1,
+                        completion = CompletionPolicy.TolerateFailures(count = 1),
+                    ),
             ) { item, _ ->
                 if (item == "fail") error("item failed")
                 item
@@ -255,53 +330,66 @@ public class MapFailThenWait : KotlinDurableHandler<Any?, Map<String, Any>>() {
     }
 }
 
-public class MapOpSerde : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> =
+public class MapOpSerde(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> =
         context.map(
             name = "op-serde",
             items = listOf("x", "y"),
-            maxConcurrency = 1,
-            resultSerDes = WholeMapSerDes,
-        ) { item, _ ->
-            item.uppercase()
-        }.results()
+            outputType = typeRef(),
+            options =
+                MapOptions(
+                    maximumConcurrency = 1,
+                    resultSerde = WholeMapSerde,
+                ),
+        ) { item, _ -> item.uppercase() }
+            .values()
 }
 
-public class MapOpSerdeReplay : KotlinDurableHandler<Any?, List<String>>() {
-    override suspend fun handle(input: Any?, context: KotlinDurableContext): List<String> {
+public class MapOpSerdeReplay(
+    config: DurableRuntimeConfig = DurableRuntimeConfig(),
+) : DurableHandler<Any?, List<String>>(typeRef(), typeRef(), config) {
+    override suspend fun handle(input: Any?, context: DurableContext): List<String> {
         val result =
             context.map(
                 name = "op-serde-replay",
                 items = listOf("x", "y"),
-                maxConcurrency = 1,
-                resultSerDes = WholeMapSerDes,
-            ) { item, _ ->
-                item.uppercase()
-            }
+                outputType = typeRef<String>(),
+                options =
+                    MapOptions(
+                        maximumConcurrency = 1,
+                        resultSerde = WholeMapSerde,
+                    ),
+            ) { item, _ -> item.uppercase() }
         context.wait(1.seconds)
-        return result.results()
+        return result.values()
     }
 }
 
-private object WrappedItemSerDes : SerDes {
-    override fun serialize(value: Any?): String? = value?.let { "wrapped:$it" }
+private object WrappedItemSerde : Serde {
+    override fun encode(value: Any?): String = "wrapped:$value"
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any?> deserialize(data: String?, typeToken: TypeToken<T>): T =
-        data?.removePrefix("wrapped:") as T
+    override fun <T> decode(payload: String, type: TypeRef<T>): T =
+        payload.removePrefix("wrapped:") as T
 }
 
-private object WholeMapSerDes : SerDes {
-    override fun serialize(value: Any?): String {
+private object WholeMapSerde : Serde {
+    override fun encode(value: Any?): String {
         val result = value as MapResult<*>
-        return "OPSERDE:" + result.results().joinToString(",")
+        return "OPSERDE:" + result.values().joinToString(",")
     }
 
     @Suppress("UNCHECKED_CAST")
-    override fun <T : Any?> deserialize(data: String?, typeToken: TypeToken<T>): T {
-        val values = data.orEmpty().removePrefix("OPSERDE:").split(",")
-        val items = values.map { MapResult.MapResultItem.succeeded(it) }
-        return MapResult(items, ConcurrencyCompletionStatus.ALL_COMPLETED) as T
+    override fun <T> decode(payload: String, type: TypeRef<T>): T {
+        val values = payload.removePrefix("OPSERDE:").split(",").filter(String::isNotEmpty)
+        return MapResult(
+            BatchCompletion.ALL_COMPLETED,
+            values.mapIndexed { index, value ->
+                ItemResult.Success(index, null, value)
+            },
+        ) as T
     }
 }
 
@@ -310,9 +398,16 @@ private fun <T> summary(
     includeStatus: Boolean = false,
 ): Map<String, Any> =
     linkedMapOf<String, Any>().apply {
-        put("completionReason", result.completionReason().name)
-        if (includeStatus) put("status", if (result.allSucceeded()) "SUCCEEDED" else "FAILED")
-        put("successCount", result.succeeded().size)
-        put("failureCount", result.failed().size)
-        put("totalCount", result.succeeded().size + result.failed().size)
+        put(
+            "completionReason",
+            when (result.completion) {
+                BatchCompletion.ALL_COMPLETED -> "ALL_COMPLETED"
+                BatchCompletion.MINIMUM_SUCCEEDED -> "MIN_SUCCESSFUL_REACHED"
+                BatchCompletion.FAILURE_LIMIT_EXCEEDED -> "FAILURE_TOLERANCE_EXCEEDED"
+            },
+        )
+        if (includeStatus) put("status", if (result.failures.isEmpty()) "SUCCEEDED" else "FAILED")
+        put("successCount", result.successes.size)
+        put("failureCount", result.failures.size)
+        put("totalCount", result.successes.size + result.failures.size)
     }

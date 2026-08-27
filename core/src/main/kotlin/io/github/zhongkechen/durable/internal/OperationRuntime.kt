@@ -423,6 +423,12 @@ internal class OperationRuntime(
         val identity = reserve(name, OperationKind.CONTEXT, "Map")
         val existing = ledger.find(identity)
         if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
+            if (options.resultSerde != null) {
+                @Suppress("UNCHECKED_CAST")
+                return options.resultSerde
+                    .decode(existing.resultPayload ?: error("Map result payload is missing"), typeRef<MapResult<Any?>>())
+                    as MapResult<O>
+            }
             return decodeMap(existing, outputType, options)
         }
         if (existing != null && existing.status.terminal && existing.status != CheckpointStatus.SUCCEEDED) {
@@ -471,14 +477,20 @@ internal class OperationRuntime(
         val maximumConcurrency = options.maximumConcurrency ?: maxOf(1, work.size)
         val outcome = executeBatch(work, maximumConcurrency, options.completion)
         val result = MapResult(outcome.completion, outcome.items)
-        val checkpoint = encodeMap(result, options)
-        checkpoints.checkpoint(
-            CheckpointCommand(
-                identity = identity,
-                action = CheckpointAction.SUCCEED,
-                payload = defaultSerde.encode(checkpoint),
-            ),
-        )
+        if (existing?.replayChildren != true) {
+            val payload =
+                options.resultSerde?.encode(result)
+                    ?: defaultSerde.encode(encodeMap(result, options))
+            val replayChildren = payload.encodeToByteArray().size >= LARGE_CONTEXT_RESULT_BYTES
+            checkpoints.checkpoint(
+                CheckpointCommand(
+                    identity = identity,
+                    action = CheckpointAction.SUCCEED,
+                    payload = if (replayChildren) "" else payload,
+                    replayChildren = replayChildren,
+                ),
+            )
+        }
         return result
     }
 
