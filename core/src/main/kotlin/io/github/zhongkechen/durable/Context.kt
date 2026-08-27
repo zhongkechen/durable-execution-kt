@@ -12,6 +12,7 @@ public interface CallbackHandle<out T> : DurableFuture<T> {
 
 public interface StepScope {
     public val attempt: Int
+    public val logger: DurableLogger
 }
 
 public interface CallbackSubmitterScope : StepScope {
@@ -34,6 +35,7 @@ public interface ParallelScope {
 public interface DurableContext {
     public val executionArn: String
     public val isReplaying: Boolean
+    public val logger: DurableLogger
 
     public suspend fun <T> step(
         name: String? = null,

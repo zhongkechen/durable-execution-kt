@@ -13,6 +13,7 @@ import io.github.zhongkechen.durable.ConditionOptions
 import io.github.zhongkechen.durable.ConditionScope
 import io.github.zhongkechen.durable.DeliverySemantics
 import io.github.zhongkechen.durable.DurableFuture
+import io.github.zhongkechen.durable.DurableLogger
 import io.github.zhongkechen.durable.InvokeFailureException
 import io.github.zhongkechen.durable.InvokeOptions
 import io.github.zhongkechen.durable.JsonSerde
@@ -32,6 +33,7 @@ import io.github.zhongkechen.durable.TypeRef
 import io.github.zhongkechen.durable.typeRef
 import java.time.Instant
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 
 internal class ExecutionSuspended(
@@ -51,6 +53,8 @@ internal class OperationRuntime(
     private val ids: OperationIdSequence = OperationIdSequence(parentId),
     private val defaultSerde: Serde = JsonSerde(),
 ) {
+    val logger: DurableLogger = DurableLogger(executionArn, parentId)
+
     suspend fun <T> step(
         name: String?,
         type: TypeRef<T>,
@@ -91,7 +95,13 @@ internal class OperationRuntime(
         }
 
         return try {
-            val value = block(StepScopeImpl(attempt))
+            val value =
+                block(
+                    StepScopeImpl(
+                        attempt,
+                        DurableLogger(executionArn, identity.id, identity.name, attempt),
+                    ),
+                )
             val serde = options.serde ?: defaultSerde
             val payload = serde.encode(value)
             val normalized = serde.decode(payload, type)
@@ -229,7 +239,13 @@ internal class OperationRuntime(
             type = typeRef<Unit>(),
             options = options.submitter,
         ) {
-            submitter(CallbackSubmitterScopeImpl(callback.id, attempt))
+            submitter(
+                CallbackSubmitterScopeImpl(
+                    callback.id,
+                    attempt,
+                    DurableLogger(executionArn, null, submitterName, attempt),
+                ),
+            )
         }
         return callback.await()
     }
@@ -278,7 +294,16 @@ internal class OperationRuntime(
         }
 
         return try {
-            when (val decision = check(ConditionScopeImpl(currentState, attempt))) {
+            when (
+                val decision =
+                    check(
+                        ConditionScopeImpl(
+                            currentState,
+                            attempt,
+                            DurableLogger(executionArn, identity.id, identity.name, attempt),
+                        ),
+                    )
+            ) {
                 is ConditionDecision.Complete -> {
                     val serde = options.serde ?: defaultSerde
                     val payload = serde.encode(decision.result)
@@ -575,13 +600,14 @@ internal class OperationRuntime(
                 throw StepFailureException(identity.id, error)
             }
             is RetryDecision.Retry -> {
-                val resumeAt = Instant.now().plusMillis(decision.delay.inWholeMilliseconds)
+                val delay = maxOf(decision.delay, 1.seconds)
+                val resumeAt = Instant.now().plusMillis(delay.inWholeMilliseconds)
                 checkpoints.checkpoint(
                     CheckpointCommand(
                         identity = identity,
                         action = CheckpointAction.RETRY,
                         error = error.toCheckpointError(),
-                        retryDelay = decision.delay,
+                        retryDelay = delay,
                     ),
                 )
                 throw ExecutionSuspended(identity.id, resumeAt)
@@ -750,16 +776,19 @@ internal class OperationRuntime(
 
     private data class StepScopeImpl(
         override val attempt: Int,
+        override val logger: DurableLogger,
     ) : StepScope
 
     private data class CallbackSubmitterScopeImpl(
         override val callbackId: String,
         override val attempt: Int,
+        override val logger: DurableLogger,
     ) : CallbackSubmitterScope
 
     private data class ConditionScopeImpl<T>(
         override val state: T,
         override val attempt: Int,
+        override val logger: DurableLogger,
     ) : ConditionScope<T>
 }
 

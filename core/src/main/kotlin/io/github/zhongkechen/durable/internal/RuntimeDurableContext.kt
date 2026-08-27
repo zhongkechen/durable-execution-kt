@@ -10,6 +10,7 @@ import io.github.zhongkechen.durable.ConditionOptions
 import io.github.zhongkechen.durable.ConditionScope
 import io.github.zhongkechen.durable.DurableContext
 import io.github.zhongkechen.durable.DurableFuture
+import io.github.zhongkechen.durable.DurableLogger
 import io.github.zhongkechen.durable.InvokeOptions
 import io.github.zhongkechen.durable.MapOptions
 import io.github.zhongkechen.durable.MapResult
@@ -30,6 +31,9 @@ internal class RuntimeDurableContext(
 
     override val isReplaying: Boolean
         get() = runtime.isReplaying
+
+    override val logger: DurableLogger
+        get() = runtime.logger
 
     override suspend fun <T> step(
         name: String?,

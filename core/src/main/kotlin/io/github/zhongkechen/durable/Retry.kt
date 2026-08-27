@@ -37,7 +37,14 @@ public fun interface RetryPolicy {
     public companion object {
         public val none: RetryPolicy = RetryPolicy { _, _ -> RetryDecision.Fail }
 
-        public val default: RetryPolicy = exponential()
+        public val default: RetryPolicy =
+            exponential(
+                maxAttempts = 6,
+                initialDelay = 5.seconds,
+                maximumDelay = 60.seconds,
+                multiplier = 2.0,
+                jitter = RetryJitter.FULL,
+            )
 
         public fun fixed(
             maxAttempts: Int = 3,

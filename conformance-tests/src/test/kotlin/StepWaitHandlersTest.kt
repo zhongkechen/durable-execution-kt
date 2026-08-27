@@ -1,13 +1,9 @@
-// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0
-
+import com.amazonaws.services.lambda.runtime.RequestStreamHandler
+import io.github.zhongkechen.durable.DurableRuntimeConfig
 import io.github.zhongkechen.durable.testing.LocalDurableRunner
 import io.github.zhongkechen.durable.testing.LocalExecutionStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import software.amazon.lambda.durable.AsyncDurableHandler
-import software.amazon.lambda.durable.model.ExecutionStatus
-import software.amazon.lambda.durable.testing.LocalDurableTestRunner
 import step.StepAndWaitReplay
 import step.StepBasic
 import step.StepCustomSerdes
@@ -18,60 +14,66 @@ import step.StepWithRetry
 import wait.WaitMultipleSequential
 
 class StepWaitHandlersTest {
-    @Suppress("UNCHECKED_CAST")
-    private val anyClass: Class<Any?> = Any::class.java as Class<Any?>
-
-    @Suppress("UNCHECKED_CAST")
-    private val mapClass: Class<Map<String, Any>> = Map::class.java as Class<Map<String, Any>>
-
     @Test
     fun basicAndNestedStepsComplete() {
-        assertEquals("Hello, Kotlin!", run(StepBasic(), "Kotlin", String::class.java, String::class.java))
-        assertEquals("first_second", run(StepNested(), null, anyClass, String::class.java))
+        assertEquals(
+            "Hello, Kotlin!",
+            run("Kotlin") { StepBasic(it) },
+        )
+        assertEquals(
+            "first_second",
+            run<Any?, String>(null) { StepNested(it) },
+        )
     }
 
     @Test
     fun replayAndErrorHandlingStepsComplete() {
-        assertEquals("computed", run(StepAndWaitReplay(), null, anyClass, String::class.java))
-        assertEquals("fallback_result", run(StepErrorCaught(), null, anyClass, String::class.java))
+        assertEquals(
+            "computed",
+            run<Any?, String>(null) { StepAndWaitReplay(it) },
+        )
+        assertEquals(
+            "fallback_result",
+            run<Any?, String>(null) { StepErrorCaught(it) },
+        )
     }
 
     @Test
     fun customStepSerializationCompletes() {
-        assertEquals("VALUE", run(StepCustomSerdes(), "value", String::class.java, String::class.java))
+        assertEquals(
+            "VALUE",
+            run("value") { StepCustomSerdes(it) },
+        )
     }
 
     @Test
     fun retryHandlersComplete() {
-        assertEquals("Operation succeeded", run(StepWithRetry(), null, anyClass, String::class.java))
-        assertEquals("recovered", run(StepDefaultRetry(), null, anyClass, String::class.java))
+        assertEquals(
+            "Operation succeeded",
+            run<Any?, String>(null) { StepWithRetry(it) },
+        )
+        assertEquals(
+            "recovered",
+            run<Any?, String>(null) { StepDefaultRetry(it) },
+        )
     }
 
     @Test
     fun sequentialWaitsComplete() {
-        val runner =
-            LocalDurableRunner.create<Any?, Map<String, Int>> { config ->
-                WaitMultipleSequential(config)
+        val result =
+            run<Any?, Map<String, Int>>(null) {
+                WaitMultipleSequential(it)
             }
-        val result = runner.runUntilComplete(null)
-        assertEquals(LocalExecutionStatus.SUCCEEDED, result.status, result.error?.message)
-        assertEquals(2, result.result?.get("completedWaits"))
+        assertEquals(2, result["completedWaits"])
     }
 
-    private fun <I, O> run(
-        handler: AsyncDurableHandler<I, O>,
+    private inline fun <reified I, reified O> run(
         input: I,
-        inputType: Class<I>,
-        outputType: Class<O>,
+        noinline handler: (DurableRuntimeConfig) -> RequestStreamHandler,
     ): O {
-        val runner = LocalDurableTestRunner.create(inputType, handler)
+        val runner = LocalDurableRunner.create<I, O>(handlerFactory = handler)
         val result = runner.runUntilComplete(input)
-        val error = result.error.orElse(null)
-        assertEquals(
-            ExecutionStatus.SUCCEEDED,
-            result.status,
-            error?.let { "${it.errorType()}: ${it.errorMessage()}" },
-        )
-        return result.getResult(outputType)
+        assertEquals(LocalExecutionStatus.SUCCEEDED, result.status, result.error?.message)
+        return requireNotNull(result.result)
     }
 }

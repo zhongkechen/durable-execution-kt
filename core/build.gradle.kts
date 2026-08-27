@@ -12,6 +12,7 @@ dependencies {
     api(platform("com.fasterxml.jackson:jackson-bom:2.22.1"))
     api("com.amazonaws:aws-lambda-java-core:1.4.0")
     api("software.amazon.awssdk:lambda")
+    api("org.slf4j:slf4j-api:2.0.18")
     api("com.fasterxml.jackson.core:jackson-databind")
     api("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
