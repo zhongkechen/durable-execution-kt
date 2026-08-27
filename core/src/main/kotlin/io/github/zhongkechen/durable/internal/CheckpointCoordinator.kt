@@ -31,6 +31,10 @@ internal class CheckpointCoordinator(
     private val batchWindow: Duration = 5.milliseconds,
     private val maximumBatchItems: Int = 200,
     private val maximumBatchBytes: Int = 750 * 1024,
+    private val stateChanged: (
+        changed: Map<String, OperationRecord>,
+        all: Map<String, OperationRecord>,
+    ) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     private data class Submission(
         val command: CheckpointCommand,
@@ -141,7 +145,13 @@ internal class CheckpointCoordinator(
     private suspend fun applyPages(firstPage: ServicePage?) {
         var page = firstPage
         while (page != null) {
+            val before = ledger.snapshot()
             page.operations.forEach(ledger::put)
+            val changed =
+                page.operations
+                    .filter { before[it.identity.id] != it }
+                    .associateBy { it.identity.id }
+            if (changed.isNotEmpty()) stateChanged(changed, ledger.snapshot())
             val marker = page.nextMarker
             page =
                 if (marker.isNullOrEmpty()) {

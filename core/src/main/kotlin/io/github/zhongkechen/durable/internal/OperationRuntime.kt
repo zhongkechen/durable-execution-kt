@@ -14,6 +14,8 @@ import io.github.zhongkechen.durable.ConditionScope
 import io.github.zhongkechen.durable.DeliverySemantics
 import io.github.zhongkechen.durable.DurableFuture
 import io.github.zhongkechen.durable.DurableLogger
+import io.github.zhongkechen.durable.FunctionAttemptEnded
+import io.github.zhongkechen.durable.FunctionAttemptStarted
 import io.github.zhongkechen.durable.InvokeFailureException
 import io.github.zhongkechen.durable.InvokeOptions
 import io.github.zhongkechen.durable.JsonSerde
@@ -52,6 +54,7 @@ internal class OperationRuntime(
     private val parentId: String? = null,
     private val ids: OperationIdSequence = OperationIdSequence(parentId),
     private val defaultSerde: Serde = JsonSerde(),
+    private val plugins: PluginDispatcher = PluginDispatcher(emptyList()),
 ) {
     val logger: DurableLogger = DurableLogger(executionArn, parentId)
 
@@ -63,6 +66,7 @@ internal class OperationRuntime(
     ): T {
         val identity = reserve(name, OperationKind.STEP, "Step")
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         val attempt = (existing?.attempt ?: 0) + 1
 
         when (existing?.status) {
@@ -96,22 +100,22 @@ internal class OperationRuntime(
 
         return try {
             val value =
-                block(
-                    StepScopeImpl(
-                        attempt,
-                        DurableLogger(executionArn, identity.id, identity.name, attempt),
-                    ),
-                )
+                runUserFunction(identity, attempt, replayingChildren = false) {
+                    block(
+                        StepScopeImpl(
+                            attempt,
+                            DurableLogger(executionArn, identity.id, identity.name, attempt),
+                        ),
+                    )
+                }
             val serde = options.serde ?: defaultSerde
             val payload = serde.encode(value)
             val normalized = serde.decode(payload, type)
-            val replayChildren = payload.encodeToByteArray().size >= LARGE_CONTEXT_RESULT_BYTES
             checkpoints.checkpoint(
                 CheckpointCommand(
                     identity = identity,
                     action = CheckpointAction.SUCCEED,
-                    payload = if (replayChildren) "" else payload,
-                    replayChildren = replayChildren,
+                    payload = payload,
                 ),
             )
             normalized
@@ -129,6 +133,7 @@ internal class OperationRuntime(
         require(duration.isPositive()) { "Wait duration must be positive" }
         val identity = reserve(name, OperationKind.WAIT, "Wait")
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         when (existing?.status) {
             CheckpointStatus.SUCCEEDED -> return
             CheckpointStatus.STARTED,
@@ -164,6 +169,7 @@ internal class OperationRuntime(
     ): O {
         val identity = reserve(name, OperationKind.INVOKE, "ChainedInvoke")
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         when (existing?.status) {
             CheckpointStatus.SUCCEEDED ->
                 return decodeResult(existing, outputType, options.resultSerde)
@@ -204,6 +210,7 @@ internal class OperationRuntime(
     ): CallbackHandle<T> {
         val identity = reserve(name, OperationKind.CALLBACK, "Callback")
         var existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         if (existing == null) {
             checkpoints.checkpoint(
                 CheckpointCommand(
@@ -235,6 +242,7 @@ internal class OperationRuntime(
     ): T {
         val identity = reserve(name, OperationKind.CONTEXT, "WaitForCallback")
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         if (existing?.status == CheckpointStatus.SUCCEEDED) {
             return decodeResult(existing, type, options.callback.serde)
         }
@@ -257,6 +265,7 @@ internal class OperationRuntime(
                 parentId = identity.id,
                 ids = OperationIdSequence(identity.id),
                 defaultSerde = defaultSerde,
+                plugins = plugins,
             )
         return try {
             val callback = childRuntime.callback(null, type, options.callback)
@@ -307,6 +316,7 @@ internal class OperationRuntime(
     ): T {
         val identity = reserve(name, OperationKind.STEP, "WaitForCondition")
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         when (existing?.status) {
             CheckpointStatus.SUCCEEDED ->
                 return decodeResult(existing, type, options.serde)
@@ -345,13 +355,15 @@ internal class OperationRuntime(
         return try {
             when (
                 val decision =
-                    check(
-                        ConditionScopeImpl(
-                            currentState,
-                            attempt,
-                            DurableLogger(executionArn, identity.id, identity.name, attempt),
-                        ),
-                    )
+                    runUserFunction(identity, attempt, replayingChildren = false) {
+                        check(
+                            ConditionScopeImpl(
+                                currentState,
+                                attempt,
+                                DurableLogger(executionArn, identity.id, identity.name, attempt),
+                            ),
+                        )
+                    }
             ) {
                 is ConditionDecision.Complete -> {
                     val serde = options.serde ?: defaultSerde
@@ -422,6 +434,7 @@ internal class OperationRuntime(
     ): MapResult<O> {
         val identity = reserve(name, OperationKind.CONTEXT, "Map")
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
             if (options.resultSerde != null) {
                 @Suppress("UNCHECKED_CAST")
@@ -461,6 +474,7 @@ internal class OperationRuntime(
                                 parentId = identity.id,
                                 ids = OperationIdSequence(itemIdentity.id),
                                 defaultSerde = defaultSerde,
+                                plugins = plugins,
                             )
                         block(flatRuntime, item, index)
                     } else {
@@ -502,6 +516,7 @@ internal class OperationRuntime(
         val branches = RuntimeParallelScope().apply(register)
         val identity = reserve(name, OperationKind.CONTEXT, "Parallel")
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
             val result = decodeParallel(existing, branches)
             branches.complete(result.items)
@@ -536,6 +551,7 @@ internal class OperationRuntime(
                                 parentId = identity.id,
                                 ids = OperationIdSequence(branchIdentity.id),
                                 defaultSerde = defaultSerde,
+                                plugins = plugins,
                             )
                         branch.execute(flatRuntime)
                     } else {
@@ -570,6 +586,7 @@ internal class OperationRuntime(
         block: suspend OperationRuntime.() -> T,
     ): T {
         val existing = ledger.find(identity)
+        notifyObserved(identity, existing)
         if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
             return decodeResult(existing, type, options.serde)
         }
@@ -598,19 +615,29 @@ internal class OperationRuntime(
                 parentId = if (options.virtual) parentId else identity.id,
                 ids = OperationIdSequence(if (options.virtual) parentId else identity.id),
                 defaultSerde = defaultSerde,
+                plugins = plugins,
             )
 
         return try {
-            val value = block(childRuntime)
+            val value =
+                runUserFunction(
+                    identity,
+                    attempt = null,
+                    replayingChildren = existing != null || existing?.replayChildren == true,
+                ) {
+                    block(childRuntime)
+                }
             if (options.virtual || existing?.replayChildren == true) return value
             val serde = options.serde ?: defaultSerde
             val payload = serde.encode(value)
             val normalized = serde.decode(payload, type)
+            val replayChildren = payload.encodeToByteArray().size >= LARGE_CONTEXT_RESULT_BYTES
             checkpoints.checkpoint(
                 CheckpointCommand(
                     identity = identity,
                     action = CheckpointAction.SUCCEED,
-                    payload = payload,
+                    payload = if (replayChildren) "" else payload,
+                    replayChildren = replayChildren,
                 ),
             )
             normalized
@@ -642,6 +669,63 @@ internal class OperationRuntime(
             subtype = subtype,
             parentId = parentId,
         )
+
+    private suspend fun <T> runUserFunction(
+        identity: OperationIdentity,
+        attempt: Int?,
+        replayingChildren: Boolean,
+        block: suspend () -> T,
+    ): T {
+        val startedAt = Instant.now()
+        val operation =
+            identity.newSnapshot(
+                ledger.wasPresentAtInvocationStart(identity.id),
+            ).copy(attempt = attempt)
+        plugins.functionStarted(
+            FunctionAttemptStarted(
+                operation = operation,
+                startedAt = startedAt,
+                replayingChildren = replayingChildren,
+            ),
+        )
+        return try {
+            block().also {
+                plugins.functionEnded(
+                    FunctionAttemptEnded(
+                        operation = operation,
+                        startedAt = startedAt,
+                        endedAt = Instant.now(),
+                        replayingChildren = replayingChildren,
+                        succeeded = true,
+                        error = null,
+                    ),
+                )
+            }
+        } catch (error: Throwable) {
+            plugins.functionEnded(
+                FunctionAttemptEnded(
+                    operation = operation,
+                    startedAt = startedAt,
+                    endedAt = Instant.now(),
+                    replayingChildren = replayingChildren,
+                    succeeded = false,
+                    error = error,
+                ),
+            )
+            throw error
+        }
+    }
+
+    private fun notifyObserved(
+        identity: OperationIdentity,
+        existing: OperationRecord?,
+    ) {
+        if (existing == null || !existing.status.terminal) {
+            plugins.operationStarted(
+                existing?.toSnapshot(true) ?: identity.newSnapshot(),
+            )
+        }
+    }
 
     private suspend fun <T> failStep(
         identity: OperationIdentity,

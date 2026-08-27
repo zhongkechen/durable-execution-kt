@@ -22,6 +22,7 @@ public data class DurableRuntimeConfig(
     val backend: DurableBackend = LambdaBackend(),
     val dispatcher: CoroutineDispatcher = DurableDispatchers.virtualThreads,
     val checkpointBatchWindow: Duration = 5.milliseconds,
+    val plugins: List<DurablePlugin> = emptyList(),
 )
 
 public object DurableDispatchers {
@@ -45,6 +46,7 @@ public abstract class DurableHandler<I, O>(
             serde = config.serde,
             serviceContext = config.dispatcher,
             checkpointBatchWindow = config.checkpointBatchWindow,
+            plugins = config.plugins,
         )
 
     final override fun handleRequest(
@@ -75,6 +77,11 @@ public abstract class DurableHandler<I, O>(
                             inputPayload = invocation.inputPayload,
                             initialOperations = initialOperations,
                             updatedOperationIds = invocation.updatedOperationIds,
+                            requestId = context.awsRequestId,
+                            executionStartedAt =
+                                initialOperations
+                                    .firstOrNull { it.identity.kind.name == "EXECUTION" }
+                                    ?.startedAt,
                         ),
                     inputType = inputType,
                     outputType = outputType,
