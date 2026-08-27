@@ -6,6 +6,8 @@ import io.github.zhongkechen.durable.InvokeOptions
 import io.github.zhongkechen.durable.CompletionPolicy
 import io.github.zhongkechen.durable.ItemResult
 import io.github.zhongkechen.durable.MapOptions
+import io.github.zhongkechen.durable.DurableFuture
+import io.github.zhongkechen.durable.ParallelOptions
 import io.github.zhongkechen.durable.RetryPolicy
 import io.github.zhongkechen.durable.StepOptions
 import io.github.zhongkechen.durable.StepScope
@@ -246,6 +248,44 @@ class OperationRuntimeTest {
 
             assertTrue(result.items.first() is ItemResult.Failure)
             assertTrue(result.items.drop(1).all { it is ItemResult.Skipped })
+        }
+
+    @Test
+    fun `parallel supports heterogeneous branches and replayed futures`() =
+        runtimeTest { runtime, service, dispatcher ->
+            lateinit var text: DurableFuture<String>
+            lateinit var number: DurableFuture<Int>
+            val result =
+                runtime.parallel("load", ParallelOptions(maximumConcurrency = 2)) {
+                    text = branch("text", typeRef<String>()) { "ready" }
+                    number = branch("number", typeRef<Int>()) { 7 }
+                }
+
+            assertEquals(listOf("ready", 7), result.values())
+            assertEquals("ready", text.await())
+            assertEquals(7, number.await())
+
+            val checkpointed = service.snapshot()
+            val replayHarness = runtime(checkpointed, service, dispatcher)
+            var replayCalled = false
+            lateinit var replayedText: DurableFuture<String>
+            val replayed =
+                replayHarness.runtime.parallel("load", ParallelOptions(maximumConcurrency = 2)) {
+                    replayedText =
+                        branch("text", typeRef<String>()) {
+                            replayCalled = true
+                            "wrong"
+                        }
+                    branch("number", typeRef<Int>()) {
+                        replayCalled = true
+                        0
+                    }
+                }
+
+            assertEquals(listOf("ready", 7), replayed.values())
+            assertEquals("ready", replayedText.await())
+            assertFalse(replayCalled)
+            replayHarness.close()
         }
 
     private fun runtimeTest(

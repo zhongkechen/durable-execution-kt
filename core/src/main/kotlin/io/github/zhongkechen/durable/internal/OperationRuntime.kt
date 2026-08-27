@@ -6,6 +6,7 @@ import io.github.zhongkechen.durable.CallbackFailureException
 import io.github.zhongkechen.durable.CallbackHandle
 import io.github.zhongkechen.durable.CallbackOptions
 import io.github.zhongkechen.durable.DeliverySemantics
+import io.github.zhongkechen.durable.DurableFuture
 import io.github.zhongkechen.durable.InvokeFailureException
 import io.github.zhongkechen.durable.InvokeOptions
 import io.github.zhongkechen.durable.JsonSerde
@@ -13,6 +14,8 @@ import io.github.zhongkechen.durable.MapOptions
 import io.github.zhongkechen.durable.MapResult
 import io.github.zhongkechen.durable.ItemResult
 import io.github.zhongkechen.durable.Nesting
+import io.github.zhongkechen.durable.ParallelOptions
+import io.github.zhongkechen.durable.ParallelResult
 import io.github.zhongkechen.durable.RetryDecision
 import io.github.zhongkechen.durable.Serde
 import io.github.zhongkechen.durable.StepFailureException
@@ -23,6 +26,7 @@ import io.github.zhongkechen.durable.TypeRef
 import io.github.zhongkechen.durable.typeRef
 import java.time.Instant
 import kotlin.time.Duration
+import kotlinx.coroutines.CompletableDeferred
 
 internal class ExecutionSuspended(
     val operationId: String,
@@ -284,6 +288,75 @@ internal class OperationRuntime(
         return result
     }
 
+    suspend fun parallel(
+        name: String,
+        options: ParallelOptions = ParallelOptions(),
+        register: RuntimeParallelScope.() -> Unit,
+    ): ParallelResult {
+        val branches = RuntimeParallelScope().apply(register)
+        val identity = reserve(name, OperationKind.CONTEXT, "Parallel")
+        val existing = ledger.find(identity)
+        if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
+            val result = decodeParallel(existing, branches)
+            branches.complete(result.items)
+            return result
+        }
+        if (existing != null && existing.status.terminal && existing.status != CheckpointStatus.SUCCEEDED) {
+            throw childFailure(existing)
+        }
+        if (existing == null) {
+            checkpoints.checkpoint(CheckpointCommand(identity, CheckpointAction.START))
+        }
+
+        val branchIds = OperationIdSequence(identity.id)
+        val work =
+            branches.registered.mapIndexed { index, branch ->
+                val branchIdentity =
+                    OperationIdentity(
+                        id = branchIds.next(),
+                        name = branch.name,
+                        kind = OperationKind.CONTEXT,
+                        subtype = "ParallelBranch",
+                        parentId = identity.id,
+                    )
+                BatchWork<Any?>(index, branch.name) {
+                    if (options.nesting == Nesting.FLAT) {
+                        val flatRuntime =
+                            OperationRuntime(
+                                executionArn = executionArn,
+                                isReplaying = ledger.snapshot().containsKey(branchIdentity.id),
+                                ledger = ledger,
+                                checkpoints = checkpoints,
+                                parentId = identity.id,
+                                ids = OperationIdSequence(branchIdentity.id),
+                                defaultSerde = defaultSerde,
+                            )
+                        branch.execute(flatRuntime)
+                    } else {
+                        runContext(
+                            identity = branchIdentity,
+                            type = branch.type,
+                            options = ChildOptions(serde = branch.serde ?: options.itemSerde),
+                        ) {
+                            branch.execute(this)
+                        }
+                    }
+                }
+            }
+        val maximumConcurrency = options.maximumConcurrency ?: maxOf(1, work.size)
+        val outcome = executeBatch(work, maximumConcurrency, options.completion)
+        val result = ParallelResult(outcome.completion, outcome.items)
+        branches.complete(result.items)
+        checkpoints.checkpoint(
+            CheckpointCommand(
+                identity = identity,
+                action = CheckpointAction.SUCCEED,
+                payload = defaultSerde.encode(encodeParallel(result, branches, options)),
+            ),
+        )
+        return result
+    }
+
     private suspend fun <T> runContext(
         identity: OperationIdentity,
         type: TypeRef<T>,
@@ -419,28 +492,28 @@ internal class OperationRuntime(
     private fun <O> encodeMap(
         result: MapResult<O>,
         options: MapOptions<*>,
-    ): MapCheckpoint =
-        MapCheckpoint(
+    ): BatchCheckpoint =
+        BatchCheckpoint(
             completion = result.completion.name,
             items =
                 result.items.map { item ->
                     when (item) {
                         is ItemResult.Success ->
-                            MapCheckpointItem(
+                            BatchCheckpointItem(
                                 index = item.index,
                                 name = item.name,
                                 status = "SUCCEEDED",
                                 payload = (options.itemSerde ?: defaultSerde).encode(item.value),
                             )
                         is ItemResult.Failure ->
-                            MapCheckpointItem(
+                            BatchCheckpointItem(
                                 index = item.index,
                                 name = item.name,
                                 status = "FAILED",
                                 error = item.error.message,
                             )
                         is ItemResult.Skipped ->
-                            MapCheckpointItem(
+                            BatchCheckpointItem(
                                 index = item.index,
                                 name = item.name,
                                 status = "SKIPPED",
@@ -455,7 +528,10 @@ internal class OperationRuntime(
         options: MapOptions<*>,
     ): MapResult<O> {
         val checkpoint =
-            defaultSerde.decode(record.resultPayload ?: error("Map result payload is missing"), typeRef<MapCheckpoint>())
+            defaultSerde.decode(
+                record.resultPayload ?: error("Map result payload is missing"),
+                typeRef<BatchCheckpoint>(),
+            )
         val itemSerde = options.itemSerde ?: defaultSerde
         val items =
             checkpoint.items.map { item ->
@@ -482,23 +558,145 @@ internal class OperationRuntime(
         )
     }
 
+    private fun encodeParallel(
+        result: ParallelResult,
+        branches: RuntimeParallelScope,
+        options: ParallelOptions,
+    ): BatchCheckpoint =
+        BatchCheckpoint(
+            completion = result.completion.name,
+            items =
+                result.items.map { item ->
+                    val branch = branches.registered[item.index]
+                    when (item) {
+                        is ItemResult.Success ->
+                            BatchCheckpointItem(
+                                index = item.index,
+                                name = item.name,
+                                status = "SUCCEEDED",
+                                payload = (branch.serde ?: options.itemSerde ?: defaultSerde).encode(item.value),
+                            )
+                        is ItemResult.Failure ->
+                            BatchCheckpointItem(
+                                index = item.index,
+                                name = item.name,
+                                status = "FAILED",
+                                error = item.error.message,
+                            )
+                        is ItemResult.Skipped ->
+                            BatchCheckpointItem(
+                                index = item.index,
+                                name = item.name,
+                                status = "SKIPPED",
+                            )
+                    }
+                },
+        )
+
+    private fun decodeParallel(
+        record: OperationRecord,
+        branches: RuntimeParallelScope,
+    ): ParallelResult {
+        val checkpoint =
+            defaultSerde.decode(
+                record.resultPayload ?: error("Parallel result payload is missing"),
+                typeRef<BatchCheckpoint>(),
+            )
+        val items =
+            checkpoint.items.map { item ->
+                val branch = branches.registered[item.index]
+                when (item.status) {
+                    "SUCCEEDED" ->
+                        ItemResult.Success(
+                            item.index,
+                            item.name,
+                            (branch.serde ?: defaultSerde).decode(item.payload ?: "null", branch.type),
+                        )
+                    "FAILED" ->
+                        ItemResult.Failure(
+                            item.index,
+                            item.name,
+                            RuntimeException(item.error ?: "Checkpointed parallel branch failure"),
+                        )
+                    else -> ItemResult.Skipped(item.index, item.name)
+                }
+            }
+        return ParallelResult(
+            completion =
+                io.github.zhongkechen.durable.BatchCompletion.valueOf(checkpoint.completion),
+            items = items,
+        )
+    }
+
     private data class StepScopeImpl(
         override val attempt: Int,
     ) : StepScope
 }
 
-private data class MapCheckpoint(
+private data class BatchCheckpoint(
     val completion: String,
-    val items: List<MapCheckpointItem>,
+    val items: List<BatchCheckpointItem>,
 )
 
-private data class MapCheckpointItem(
+private data class BatchCheckpointItem(
     val index: Int,
     val name: String?,
     val status: String,
     val payload: String? = null,
     val error: String? = null,
 )
+
+internal class RuntimeParallelScope {
+    internal data class RegisteredBranch(
+        val name: String,
+        val type: TypeRef<Any?>,
+        val serde: Serde?,
+        val execute: suspend OperationRuntime.() -> Any?,
+        val completion: CompletableDeferred<Any?>,
+    )
+
+    internal val registered: MutableList<RegisteredBranch> = mutableListOf()
+
+    fun <T> branch(
+        name: String,
+        type: TypeRef<T>,
+        serde: Serde? = null,
+        block: suspend OperationRuntime.() -> T,
+    ): DurableFuture<T> {
+        val completion = CompletableDeferred<Any?>()
+        @Suppress("UNCHECKED_CAST")
+        registered +=
+            RegisteredBranch(
+                name = name,
+                type = type as TypeRef<Any?>,
+                serde = serde,
+                execute = block as suspend OperationRuntime.() -> Any?,
+                completion = completion,
+            )
+        return RuntimeFuture(completion)
+    }
+
+    internal fun complete(items: List<ItemResult<Any?>>) {
+        items.forEach { item ->
+            val completion = registered[item.index].completion
+            when (item) {
+                is ItemResult.Success -> completion.complete(item.value)
+                is ItemResult.Failure -> completion.completeExceptionally(item.error)
+                is ItemResult.Skipped ->
+                    completion.completeExceptionally(
+                        IllegalStateException("Parallel branch ${item.name ?: item.index} was skipped"),
+                    )
+            }
+        }
+    }
+}
+
+private class RuntimeFuture<T>(
+    private val deferred: CompletableDeferred<Any?>,
+) : DurableFuture<T> {
+    @Suppress("UNCHECKED_CAST")
+    override suspend fun await(): T = deferred.await() as T
+}
 
 private class RuntimeCallback<T>(
     private val identity: OperationIdentity,
