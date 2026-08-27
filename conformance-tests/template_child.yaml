@@ -49,31 +49,6 @@ Resources:
             - lambda:CheckpointDurableExecution
             - lambda:GetDurableExecutionState
             Resource: '*'
-      - PolicyName: DynamoDBPolicy
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - dynamodb:GetItem
-            - dynamodb:PutItem
-            - dynamodb:UpdateItem
-            Resource:
-              Fn::GetAtt:
-              - JavaChildAttemptsTable
-              - Arn
-
-  JavaChildAttemptsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      AttributeDefinitions:
-      - AttributeName: executionId
-        AttributeType: S
-      KeySchema:
-      - AttributeName: executionId
-        KeyType: HASH
-      BillingMode: PAY_PER_REQUEST
-
   ChildBasic:
     Type: AWS::Serverless::Function
     Metadata:
@@ -286,10 +261,6 @@ Resources:
         Fn::GetAtt:
         - DurableFunctionRole
         - Arn
-      Environment:
-        Variables:
-          ATTEMPTS_TABLE_NAME:
-            Ref: JavaChildAttemptsTable
       DurableConfig:
         RetentionPeriodInDays: 7
         ExecutionTimeout: 300
