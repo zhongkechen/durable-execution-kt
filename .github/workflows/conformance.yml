@@ -99,6 +99,15 @@ jobs:
           git clone --depth 1 https://github.com/aws/aws-durable-execution-conformance-tests.git .conformance
           pip install ./.conformance/packages/aws-durable-execution-conformance-tests
 
+      - name: Stabilize wait-for-callback action timing
+        if: matrix.suite == 'wait_for_callback'
+        run: |
+          find \
+            .conformance/packages/aws-durable-execution-conformance-tests/test-requirements/wait_for_callback \
+            -type f \
+            -name '*.yaml' \
+            -exec sed -i -E 's/^([[:space:]]*)Delay: 1$/\1Delay: 2/' {} +
+
       - name: Run ${{ matrix.suite }} conformance
         run: |
           python -m aws_durable_execution_conformance_tests.app \

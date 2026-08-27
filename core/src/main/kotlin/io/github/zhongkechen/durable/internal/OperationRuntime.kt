@@ -1240,20 +1240,21 @@ internal class OperationRuntime(
         startCheckpoint: Deferred<Unit>? = null,
     ): T {
         require(delay.isPositive()) { "Retry delay must be positive" }
+        val effectiveDelay = maxOf(delay, 1.seconds)
         val payload =
             state?.let {
                 serde.encode(it).also { encoded ->
                     serde.decode(encoded, type)
                 }
             }
-        val resumeAt = Instant.now().plusMillis(delay.inWholeMilliseconds)
+        val resumeAt = Instant.now().plusMillis(effectiveDelay.inWholeMilliseconds)
         checkpoints.checkpoint(
             CheckpointCommand(
                 identity = identity,
                 action = CheckpointAction.RETRY,
                 payload = payload,
                 error = error?.takeIf { payload == null }?.toCheckpointError(),
-                retryDelay = delay,
+                retryDelay = effectiveDelay,
             ),
         )
         startCheckpoint?.await()

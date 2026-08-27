@@ -104,7 +104,7 @@ class OperationRuntimeTest {
                                     state,
                                     _,
                                 ->
-                                ExtensionRetryDecision.Retry(state, 1.seconds)
+                                ExtensionRetryDecision.Retry(state, 1.milliseconds)
                             },
                         ),
                 ) {
@@ -116,6 +116,7 @@ class OperationRuntimeTest {
             assertEquals(CheckpointAction.RETRY, retry.action)
             assertEquals(null, retry.payload)
             assertEquals("temporary", retry.error?.message)
+            assertEquals(1.seconds, retry.retryDelay)
         }
 
     @Test
