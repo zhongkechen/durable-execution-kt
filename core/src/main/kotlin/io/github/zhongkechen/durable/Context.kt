@@ -55,7 +55,7 @@ public interface DurableContext {
         options: InvokeOptions = InvokeOptions(),
     ): O
 
-    public fun <T> callback(
+    public suspend fun <T> callback(
         name: String? = null,
         type: TypeRef<T>,
         options: CallbackOptions = CallbackOptions(),

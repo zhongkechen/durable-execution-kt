@@ -180,6 +180,7 @@ internal fun Operation.toRecord(): OperationRecord =
         error = errorObject()?.toCheckpointError(),
         nextAttemptAt = stepDetails()?.nextAttemptTimestamp(),
         replayChildren = contextDetails()?.replayChildren() == true,
+        callbackId = callbackDetails()?.callbackId(),
     )
 
 private fun Operation.resultPayload(): String? =

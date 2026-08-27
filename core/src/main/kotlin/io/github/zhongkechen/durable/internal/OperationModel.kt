@@ -57,4 +57,5 @@ internal data class OperationRecord(
     val error: CheckpointError? = null,
     val nextAttemptAt: Instant? = null,
     val replayChildren: Boolean = false,
+    val callbackId: String? = null,
 )
