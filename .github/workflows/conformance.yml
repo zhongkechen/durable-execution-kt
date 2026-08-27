@@ -31,13 +31,16 @@ permissions:
 
 concurrency:
   group: cloud-conformance-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   conformance:
     name: ${{ matrix.suite }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: cloud-conformance-stack-${{ matrix.suite }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +83,6 @@ jobs:
       - name: Run ${{ matrix.suite }} conformance
         env:
           CONFORMANCE_SUITE: ${{ matrix.suite }}
-          WORKFLOW_RUN_ID: ${{ github.run_id }}
         run: |
           stack_suite="${CONFORMANCE_SUITE//_/-}"
           python -m aws_durable_execution_conformance_tests.app \
@@ -88,11 +90,12 @@ jobs:
             --language kotlin \
             --region us-west-2 \
             --suite "${CONFORMANCE_SUITE}" \
-            --name "kotlin-${stack_suite}-${WORKFLOW_RUN_ID}" \
+            --name "kotlin-${stack_suite}-persistent" \
             --history-dir "conformance-output/${CONFORMANCE_SUITE}" \
             --report console json junit github \
             --report-file "conformance-output/${CONFORMANCE_SUITE}/report" \
-            --fail-on failed+uncovered
+            --fail-on failed+uncovered \
+            --no-cleanup
 
       - uses: actions/upload-artifact@v4
         if: always()
