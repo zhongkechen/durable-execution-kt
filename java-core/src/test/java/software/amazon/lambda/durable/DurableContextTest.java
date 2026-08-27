@@ -1,0 +1,411 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+package software.amazon.lambda.durable;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.services.lambda.model.*;
+import software.amazon.lambda.durable.config.StepConfig;
+import software.amazon.lambda.durable.context.DurableContextImpl;
+import software.amazon.lambda.durable.execution.ExecutionManager;
+import software.amazon.lambda.durable.execution.SuspendExecutionException;
+import software.amazon.lambda.durable.execution.ThreadContext;
+import software.amazon.lambda.durable.execution.ThreadType;
+import software.amazon.lambda.durable.model.DurableExecutionInput;
+import software.amazon.lambda.durable.model.OperationSubType;
+import software.amazon.lambda.durable.retry.RetryStrategies;
+
+class DurableContextTest {
+    private static final String EXECUTION_NAME = "349beff4-a89d-4bc8-a56f-af7a8af67a5f";
+    private static final String EXECUTION_OP_ID = "20dae574-53da-37a1-bfd5-b0e2e6ec715d";
+    private static final String EXECUTION_ARN = "arn:aws:lambda:us-east-1:123456789012:function:test/durable-execution/"
+            + EXECUTION_NAME + "/" + EXECUTION_OP_ID;
+
+    private static final Operation EXECUTION_OP = Operation.builder()
+            .id(EXECUTION_OP_ID)
+            .type(OperationType.EXECUTION)
+            .status(OperationStatus.STARTED)
+            .build();
+    private static final String OPERATION_ID1 = TestUtils.hashOperationId("1");
+    private static final String OPERATION_ID2 = TestUtils.hashOperationId("2");
+    private static final String OPERATION_ID3 = TestUtils.hashOperationId("3");
+
+    private DurableContext createTestContext() {
+        return createTestContext(List.of());
+    }
+
+    private DurableContext createTestContext(List<Operation> initialOperations) {
+        var client = TestUtils.createMockClient();
+        var operations = new ArrayList<>(List.of(EXECUTION_OP));
+        operations.addAll(initialOperations);
+        var initialExecutionState =
+                CheckpointUpdatedExecutionState.builder().operations(operations).build();
+        var executionManager = new ExecutionManager(
+                new DurableExecutionInput(EXECUTION_ARN, "test-token", initialExecutionState),
+                DurableConfig.builder().withDurableExecutionClient(client).build(),
+                null);
+        var root = DurableContextImpl.createRootContext(
+                executionManager,
+                software.amazon.lambda.durable.DurableConfig.builder().build(),
+                null);
+        executionManager.registerActiveThread(null);
+        executionManager.setCurrentThreadContext(new ThreadContext(null, ThreadType.CONTEXT));
+        return root;
+    }
+
+    @Test
+    void testContextCreation() {
+        var context = createTestContext();
+
+        assertNotNull(context);
+        assertNull(context.getLambdaContext());
+    }
+
+    @Test
+    void testGetExecutionContext() {
+        var context = createTestContext();
+
+        assertNotNull(context.getExecutionArn());
+        assertEquals(EXECUTION_ARN, context.getExecutionArn());
+    }
+
+    @Test
+    void testStepExecution() {
+        var context = createTestContext();
+
+        var result = context.step("test", String.class, stepCtx -> "Hello World");
+
+        assertEquals("Hello World", result);
+    }
+
+    @Test
+    void testStepReplay() {
+        // Create context with existing operation
+        var existingOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(StepDetails.builder().result("\"Cached Result\"").build())
+                .build();
+        var context = createTestContext(List.of(existingOp));
+
+        // This should return cached result, not execute the function
+        var result = context.step("test", String.class, stepCtx -> "New Result");
+
+        assertEquals("Cached Result", result);
+    }
+
+    @Test
+    void testStepAsync() throws Exception {
+        var context = createTestContext();
+
+        var future = context.stepAsync("async-test", String.class, stepCtx -> "Async Result");
+
+        assertNotNull(future);
+        assertEquals("Async Result", future.get());
+    }
+
+    @Test
+    void testStepAsyncReplay() throws Exception {
+        // Create context with existing operation
+        var existingOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(
+                        StepDetails.builder().result("\"Cached Async Result\"").build())
+                .build();
+        var context = createTestContext(List.of(existingOp));
+
+        // This should return cached result immediately
+        var future = context.stepAsync("async-test", String.class, stepCtx -> "New Async Result");
+        assertEquals("Cached Async Result", future.get());
+    }
+
+    @Test
+    void testWait() {
+        var context = createTestContext();
+
+        // Wait should throw SuspendExecutionException
+        assertThrows(SuspendExecutionException.class, () -> {
+            context.wait(null, Duration.ofMinutes(5));
+        });
+    }
+
+    @Test
+    void testWaitReplay() {
+        // Create context with completed wait operation
+        var existingOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .build();
+        var context = createTestContext(List.of(existingOp));
+
+        // Wait should complete immediately (no exception)
+        assertDoesNotThrow(() -> {
+            context.wait(null, Duration.ofMinutes(5));
+        });
+    }
+
+    @Test
+    void testCombinedSyncAsyncWait() throws Exception {
+        var context = createTestContext();
+
+        // Execute sync step
+        var syncResult = context.step("sync-step", String.class, stepCtx -> "Sync Done");
+        assertEquals("Sync Done", syncResult);
+
+        // Execute async step
+        var asyncFuture = context.stepAsync("async-step", Integer.class, stepCtx -> 42);
+        assertEquals(42, asyncFuture.get());
+
+        // Receiving results from `get` calls doesn't mean the step threads have been deregistered.So we wait for 500ms
+        // to make sure the above step threads have been deregistered. Otherwise, the wait call will be stuck forever
+        // and SuspendExecutionException will be thrown from the step thread
+        Thread.sleep(500);
+
+        // Wait should suspend (throw exception)
+        assertThrows(SuspendExecutionException.class, () -> {
+            context.wait(null, Duration.ofSeconds(30));
+        });
+    }
+
+    @Test
+    void testCombinedReplay() throws Exception {
+        // Create context with all operations completed
+        var syncOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(StepDetails.builder().result("\"Replayed Sync\"").build())
+                .build();
+        var asyncOp = Operation.builder()
+                .id(OPERATION_ID2)
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(StepDetails.builder().result("100").build())
+                .build();
+        var waitOp = Operation.builder()
+                .id(OPERATION_ID3)
+                .status(OperationStatus.SUCCEEDED)
+                .build();
+        var context = createTestContext(List.of(syncOp, asyncOp, waitOp));
+
+        // All operations should replay from cache
+        var syncResult = context.step("sync-step", String.class, stepCtx -> "New Sync");
+        assertEquals("Replayed Sync", syncResult);
+
+        var asyncFuture = context.stepAsync("async-step", Integer.class, stepCtx -> 999);
+        assertEquals(100, asyncFuture.get());
+
+        // Wait should complete immediately (no exception)
+        assertDoesNotThrow(() -> {
+            context.wait(null, Duration.ofSeconds(30));
+        });
+    }
+
+    @Test
+    void testNamedWait() {
+        var ctx = createTestContext();
+
+        // Named wait should throw SuspendExecutionException
+        assertThrows(SuspendExecutionException.class, () -> {
+            ctx.wait("my-wait", Duration.ofSeconds(5));
+        });
+
+        // Verify it works without error (basic functionality test)
+        assertDoesNotThrow(() -> {
+            var ctx2 = createTestContext();
+            try {
+                ctx2.wait("another-wait", Duration.ofMinutes(1));
+            } catch (SuspendExecutionException e) {
+                // Expected - this means the method worked
+            }
+        });
+    }
+
+    @Test
+    void testStepWithTypeToken() {
+        var context = createTestContext();
+
+        List<String> result =
+                context.step("test-list", new TypeToken<List<String>>() {}, stepCtx -> List.of("a", "b", "c"));
+
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals("a", result.get(0));
+    }
+
+    @Test
+    void testStepWithTypeTokenReplay() {
+        // Create context with existing operation
+        var existingOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(StepDetails.builder()
+                        .result("[\"cached1\",\"cached2\"]")
+                        .build())
+                .build();
+        var context = createTestContext(List.of(existingOp));
+
+        // This should return cached result, not execute the function
+        List<String> result =
+                context.step("test-list", new TypeToken<List<String>>() {}, stepCtx -> List.of("new1", "new2"));
+
+        assertEquals(2, result.size());
+        assertEquals("cached1", result.get(0));
+        assertEquals("cached2", result.get(1));
+    }
+
+    @Test
+    void testStepWithTypeTokenAndConfig() {
+        var context = createTestContext();
+
+        List<Integer> result = context.step(
+                "test-numbers",
+                new TypeToken<List<Integer>>() {},
+                stepCtx -> List.of(1, 2, 3),
+                StepConfig.builder()
+                        .retryStrategy(RetryStrategies.Presets.DEFAULT)
+                        .build());
+
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals(1, result.get(0));
+    }
+
+    @Test
+    void testStepAsyncWithTypeToken() throws Exception {
+        var context = createTestContext();
+
+        DurableFuture<List<String>> future =
+                context.stepAsync("async-list", new TypeToken<List<String>>() {}, stepCtx -> List.of("x", "y", "z"));
+
+        assertNotNull(future);
+        List<String> result = future.get();
+        assertEquals(3, result.size());
+        assertEquals("x", result.get(0));
+    }
+
+    @Test
+    void testStepAsyncWithTypeTokenReplay() throws Exception {
+        // Create context with existing operation
+        var existingOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(StepDetails.builder()
+                        .result("[\"async-cached1\",\"async-cached2\"]")
+                        .build())
+                .build();
+        var context = createTestContext(List.of(existingOp));
+
+        // This should return cached result immediately
+        DurableFuture<List<String>> future = context.stepAsync(
+                "async-list", new TypeToken<List<String>>() {}, stepCtx -> List.of("async-new1", "async-new2"));
+
+        List<String> result = future.get();
+        assertEquals(2, result.size());
+        assertEquals("async-cached1", result.get(0));
+        assertEquals("async-cached2", result.get(1));
+    }
+
+    @Test
+    void testStepAsyncWithTypeTokenAndConfig() throws Exception {
+        var context = createTestContext();
+
+        DurableFuture<List<Integer>> future = context.stepAsync(
+                "async-numbers",
+                new TypeToken<List<Integer>>() {},
+                stepCtx -> List.of(10, 20, 30),
+                StepConfig.builder()
+                        .retryStrategy(RetryStrategies.Presets.DEFAULT)
+                        .build());
+
+        assertNotNull(future);
+        List<Integer> result = future.get();
+        assertEquals(3, result.size());
+        assertEquals(10, result.get(0));
+    }
+
+    @Test
+    void testWaitForCallback_allCompleted() {
+        var contextOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .contextDetails(ContextDetails.builder().replayChildren(true).build())
+                .build();
+        var callbackOp = Operation.builder()
+                .id(TestUtils.hashOperationId(OPERATION_ID1 + "-1"))
+                .status(OperationStatus.SUCCEEDED)
+                .callbackDetails(CallbackDetails.builder()
+                        .result("\"result\"")
+                        .callbackId("callback-id")
+                        .build())
+                .build();
+        var stepOp = Operation.builder()
+                .id(TestUtils.hashOperationId(OPERATION_ID1 + "-2"))
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(StepDetails.builder().build())
+                .build();
+        var context = createTestContext(List.of(contextOp, callbackOp, stepOp));
+
+        // waitForCallback should throw SuspendExecutionException on first execution
+        var result = context.waitForCallback("approval", String.class, (callbackId, stepCtx) -> {
+            // step already completed so this should not be called
+            fail();
+        });
+        assertEquals("result", result);
+    }
+
+    @Test
+    void testWaitForCallback_contextCompleted() {
+        var contextOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .status(OperationStatus.SUCCEEDED)
+                .contextDetails(ContextDetails.builder()
+                        .result("\"result\"")
+                        .replayChildren(false)
+                        .build())
+                .build();
+        var context = createTestContext(List.of(contextOp));
+
+        // waitForCallback should throw SuspendExecutionException on first execution
+        var result = context.waitForCallback("approval", String.class, (callbackId, stepCtx) -> {
+            // step already completed so this should not be called
+            fail();
+        });
+        assertEquals("result", result);
+    }
+
+    @Test
+    void testWaitForCallback_callbackAndStepCompleted() {
+        var contextOp = Operation.builder()
+                .id(OPERATION_ID1)
+                .name("approval")
+                .status(OperationStatus.STARTED)
+                .type(OperationType.CONTEXT)
+                .subType(OperationSubType.WAIT_FOR_CALLBACK.getValue())
+                .build();
+        var callbackOp = Operation.builder()
+                .id(TestUtils.hashOperationId(OPERATION_ID1 + "-1"))
+                .status(OperationStatus.SUCCEEDED)
+                .callbackDetails(CallbackDetails.builder()
+                        .result("\"result\"")
+                        .callbackId("callback-id")
+                        .build())
+                .build();
+        var stepOp = Operation.builder()
+                .id(TestUtils.hashOperationId(OPERATION_ID1 + "-2"))
+                .status(OperationStatus.SUCCEEDED)
+                .stepDetails(StepDetails.builder().build())
+                .build();
+        var context = createTestContext(List.of(contextOp, callbackOp, stepOp));
+
+        // waitForCallback should throw SuspendExecutionException on first execution
+        var result = context.waitForCallback("approval", String.class, (callbackId, stepCtx) -> {
+            // step already completed so this should not be called
+            fail();
+        });
+        assertEquals("result", result);
+    }
+}
