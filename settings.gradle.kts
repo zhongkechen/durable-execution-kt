@@ -16,5 +16,6 @@ rootProject.name = "durable-execution-kt"
 
 include("java-core")
 include("java-testing")
+include("core")
 include("sdk")
 include("conformance-tests")
