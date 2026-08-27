@@ -3,6 +3,9 @@ package io.github.zhongkechen.durable.internal
 import io.github.zhongkechen.durable.ChildOptions
 import io.github.zhongkechen.durable.CallbackOptions
 import io.github.zhongkechen.durable.InvokeOptions
+import io.github.zhongkechen.durable.CompletionPolicy
+import io.github.zhongkechen.durable.ItemResult
+import io.github.zhongkechen.durable.MapOptions
 import io.github.zhongkechen.durable.RetryPolicy
 import io.github.zhongkechen.durable.StepOptions
 import io.github.zhongkechen.durable.StepScope
@@ -190,6 +193,61 @@ class OperationRuntimeTest {
             replayHarness.close()
         }
 
+    @Test
+    fun `map preserves input order and replays its aggregate checkpoint`() =
+        runtimeTest { runtime, service, dispatcher ->
+            val result =
+                runtime.map(
+                    name = "double",
+                    items = listOf(3, 1, 2),
+                    outputType = typeRef<Int>(),
+                    options = MapOptions(maximumConcurrency = 2),
+                ) { item, index ->
+                    step("item-$index", typeRef<Int>()) { item * 2 }
+                }
+
+            assertEquals(listOf(6, 2, 4), result.values())
+            val checkpointed = service.snapshot()
+            var replayCalled = false
+            val replayHarness = runtime(checkpointed, service, dispatcher)
+            val replayed =
+                replayHarness.runtime.map(
+                    name = "double",
+                    items = listOf(3, 1, 2),
+                    outputType = typeRef<Int>(),
+                    options = MapOptions(maximumConcurrency = 2),
+                ) { _, _ ->
+                    replayCalled = true
+                    0
+                }
+
+            assertEquals(listOf(6, 2, 4), replayed.values())
+            assertFalse(replayCalled)
+            replayHarness.close()
+        }
+
+    @Test
+    fun `map failure policy marks unstarted items skipped`() =
+        runtimeTest { runtime, _, _ ->
+            val result =
+                runtime.map(
+                    name = "fail-fast",
+                    items = listOf(1, 2, 3),
+                    outputType = typeRef<Int>(),
+                    options =
+                        MapOptions(
+                            maximumConcurrency = 1,
+                            completion = CompletionPolicy.TolerateFailures(count = 0),
+                        ),
+                ) { item, _ ->
+                    if (item == 1) error("bad")
+                    item
+                }
+
+            assertTrue(result.items.first() is ItemResult.Failure)
+            assertTrue(result.items.drop(1).all { it is ItemResult.Skipped })
+        }
+
     private fun runtimeTest(
         initial: List<OperationRecord> = emptyList(),
         block: suspend (OperationRuntime, RuntimeService, TestDispatcher) -> Unit,
@@ -328,5 +386,7 @@ class OperationRuntimeTest {
         fun force(record: OperationRecord) {
             records[record.identity.id] = record
         }
+
+        fun snapshot(): List<OperationRecord> = records.values.toList()
     }
 }

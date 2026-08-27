@@ -9,6 +9,10 @@ import io.github.zhongkechen.durable.DeliverySemantics
 import io.github.zhongkechen.durable.InvokeFailureException
 import io.github.zhongkechen.durable.InvokeOptions
 import io.github.zhongkechen.durable.JsonSerde
+import io.github.zhongkechen.durable.MapOptions
+import io.github.zhongkechen.durable.MapResult
+import io.github.zhongkechen.durable.ItemResult
+import io.github.zhongkechen.durable.Nesting
 import io.github.zhongkechen.durable.RetryDecision
 import io.github.zhongkechen.durable.Serde
 import io.github.zhongkechen.durable.StepFailureException
@@ -16,6 +20,7 @@ import io.github.zhongkechen.durable.StepInterruptedException
 import io.github.zhongkechen.durable.StepOptions
 import io.github.zhongkechen.durable.StepScope
 import io.github.zhongkechen.durable.TypeRef
+import io.github.zhongkechen.durable.typeRef
 import java.time.Instant
 import kotlin.time.Duration
 
@@ -207,6 +212,84 @@ internal class OperationRuntime(
         block: suspend OperationRuntime.() -> T,
     ): T {
         val identity = reserve(name, OperationKind.CONTEXT, "RunInChildContext")
+        return runContext(identity, type, options, block)
+    }
+
+    suspend fun <I, O> map(
+        name: String?,
+        items: Collection<I>,
+        outputType: TypeRef<O>,
+        options: MapOptions<I> = MapOptions(),
+        block: suspend OperationRuntime.(item: I, index: Int) -> O,
+    ): MapResult<O> {
+        val identity = reserve(name, OperationKind.CONTEXT, "Map")
+        val existing = ledger.find(identity)
+        if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
+            return decodeMap(existing, outputType, options)
+        }
+        if (existing != null && existing.status.terminal && existing.status != CheckpointStatus.SUCCEEDED) {
+            throw childFailure(existing)
+        }
+        if (existing == null) {
+            checkpoints.checkpoint(CheckpointCommand(identity, CheckpointAction.START))
+        }
+
+        val itemIds = OperationIdSequence(identity.id)
+        val work =
+            items.mapIndexed { index, item ->
+                val itemName = options.itemName?.invoke(item, index)
+                val itemIdentity =
+                    OperationIdentity(
+                        id = itemIds.next(),
+                        name = itemName,
+                        kind = OperationKind.CONTEXT,
+                        subtype = "MapIteration",
+                        parentId = identity.id,
+                    )
+                BatchWork(index, itemName) {
+                    if (options.nesting == Nesting.FLAT) {
+                        val flatRuntime =
+                            OperationRuntime(
+                                executionArn = executionArn,
+                                isReplaying = ledger.snapshot().containsKey(itemIdentity.id),
+                                ledger = ledger,
+                                checkpoints = checkpoints,
+                                parentId = identity.id,
+                                ids = OperationIdSequence(itemIdentity.id),
+                                defaultSerde = defaultSerde,
+                            )
+                        block(flatRuntime, item, index)
+                    } else {
+                        runContext(
+                            identity = itemIdentity,
+                            type = outputType,
+                            options = ChildOptions(serde = options.itemSerde),
+                        ) {
+                            block(this, item, index)
+                        }
+                    }
+                }
+            }
+        val maximumConcurrency = options.maximumConcurrency ?: maxOf(1, work.size)
+        val outcome = executeBatch(work, maximumConcurrency, options.completion)
+        val result = MapResult(outcome.completion, outcome.items)
+        val checkpoint = encodeMap(result, options)
+        checkpoints.checkpoint(
+            CheckpointCommand(
+                identity = identity,
+                action = CheckpointAction.SUCCEED,
+                payload = defaultSerde.encode(checkpoint),
+            ),
+        )
+        return result
+    }
+
+    private suspend fun <T> runContext(
+        identity: OperationIdentity,
+        type: TypeRef<T>,
+        options: ChildOptions,
+        block: suspend OperationRuntime.() -> T,
+    ): T {
         val existing = ledger.find(identity)
         if (existing?.status == CheckpointStatus.SUCCEEDED && !existing.replayChildren) {
             return decodeResult(existing, type, options.serde)
@@ -333,10 +416,89 @@ internal class OperationRuntime(
             RuntimeException(record.error?.message ?: "Checkpointed child failure"),
         )
 
+    private fun <O> encodeMap(
+        result: MapResult<O>,
+        options: MapOptions<*>,
+    ): MapCheckpoint =
+        MapCheckpoint(
+            completion = result.completion.name,
+            items =
+                result.items.map { item ->
+                    when (item) {
+                        is ItemResult.Success ->
+                            MapCheckpointItem(
+                                index = item.index,
+                                name = item.name,
+                                status = "SUCCEEDED",
+                                payload = (options.itemSerde ?: defaultSerde).encode(item.value),
+                            )
+                        is ItemResult.Failure ->
+                            MapCheckpointItem(
+                                index = item.index,
+                                name = item.name,
+                                status = "FAILED",
+                                error = item.error.message,
+                            )
+                        is ItemResult.Skipped ->
+                            MapCheckpointItem(
+                                index = item.index,
+                                name = item.name,
+                                status = "SKIPPED",
+                            )
+                    }
+                },
+        )
+
+    private fun <O> decodeMap(
+        record: OperationRecord,
+        outputType: TypeRef<O>,
+        options: MapOptions<*>,
+    ): MapResult<O> {
+        val checkpoint =
+            defaultSerde.decode(record.resultPayload ?: error("Map result payload is missing"), typeRef<MapCheckpoint>())
+        val itemSerde = options.itemSerde ?: defaultSerde
+        val items =
+            checkpoint.items.map { item ->
+                when (item.status) {
+                    "SUCCEEDED" ->
+                        ItemResult.Success(
+                            item.index,
+                            item.name,
+                            itemSerde.decode(item.payload ?: "null", outputType),
+                        )
+                    "FAILED" ->
+                        ItemResult.Failure(
+                            item.index,
+                            item.name,
+                            RuntimeException(item.error ?: "Checkpointed map item failure"),
+                        )
+                    else -> ItemResult.Skipped(item.index, item.name)
+                }
+            }
+        return MapResult(
+            completion =
+                io.github.zhongkechen.durable.BatchCompletion.valueOf(checkpoint.completion),
+            items = items,
+        )
+    }
+
     private data class StepScopeImpl(
         override val attempt: Int,
     ) : StepScope
 }
+
+private data class MapCheckpoint(
+    val completion: String,
+    val items: List<MapCheckpointItem>,
+)
+
+private data class MapCheckpointItem(
+    val index: Int,
+    val name: String?,
+    val status: String,
+    val payload: String? = null,
+    val error: String? = null,
+)
 
 private class RuntimeCallback<T>(
     private val identity: OperationIdentity,
