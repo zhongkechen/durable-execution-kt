@@ -1,0 +1,2303 @@
+{
+  "suites": {
+    "callback": {
+      "logging": false,
+      "functions": [
+        {
+          "id": "CallbackBasic",
+          "handler": "callback.CallbackBasic",
+          "description": "Callback basic - anonymous, success",
+          "tests": [
+            "4-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackWithName",
+          "handler": "callback.CallbackWithName",
+          "description": "Callback with explicit name",
+          "tests": [
+            "4-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackTimeout",
+          "handler": "callback.CallbackTimeout",
+          "description": "Callback general timeout",
+          "tests": [
+            "4-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackHeartbeatTimeout",
+          "handler": "callback.CallbackHeartbeatTimeout",
+          "description": "Callback heartbeat timeout",
+          "tests": [
+            "4-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackHeartbeatSuccess",
+          "handler": "callback.CallbackHeartbeatSuccess",
+          "description": "Callback with heartbeat then success",
+          "tests": [
+            "4-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackFailure",
+          "handler": "callback.CallbackFailure",
+          "description": "Callback failure",
+          "tests": [
+            "4-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackStepFailure",
+          "handler": "callback.CallbackStepFailure",
+          "description": "Callback + Step + failure",
+          "tests": [
+            "4-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackStepTimeout",
+          "handler": "callback.CallbackStepTimeout",
+          "description": "Callback + Step + timeout",
+          "tests": [
+            "4-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackWaitSuccess",
+          "handler": "callback.CallbackWaitSuccess",
+          "description": "Callback + Wait + success",
+          "tests": [
+            "4-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackWaitFailure",
+          "handler": "callback.CallbackWaitFailure",
+          "description": "Callback + Wait + failure",
+          "tests": [
+            "4-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackWaitTimeout",
+          "handler": "callback.CallbackWaitTimeout",
+          "description": "Callback + Wait + timeout",
+          "tests": [
+            "4-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackReplayWithWait",
+          "handler": "callback.CallbackReplayWithWait",
+          "description": "Callback success then wait",
+          "tests": [
+            "4-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackReplayFailure",
+          "handler": "callback.CallbackReplayFailure",
+          "description": "Callback failure caught then wait",
+          "tests": [
+            "4-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackReplayTimeout",
+          "handler": "callback.CallbackReplayTimeout",
+          "description": "Callback timeout caught then wait",
+          "tests": [
+            "4-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackSerdesHappy",
+          "handler": "callback.CallbackSerdesHappy",
+          "description": "Custom serdes (Date roundtrip)",
+          "tests": [
+            "4-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackSerdesNumeric",
+          "handler": "callback.CallbackSerdesNumeric",
+          "description": "Custom serdes (numeric)",
+          "tests": [
+            "4-16"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackTwoSequential",
+          "handler": "callback.CallbackTwoSequential",
+          "description": "Two callbacks - sequential create and wait",
+          "tests": [
+            "4-17"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackTwoParallel",
+          "handler": "callback.CallbackTwoParallel",
+          "description": "Two callbacks - create both then wait in order",
+          "tests": [
+            "4-18"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "CallbackTwoParallelReverse",
+          "handler": "callback.CallbackTwoParallelReverse",
+          "description": "Two callbacks - create both then wait in reverse order",
+          "tests": [
+            "4-19"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    },
+    "child": {
+      "logging": true,
+      "functions": [
+        {
+          "id": "ChildBasic",
+          "handler": "child.ChildBasic",
+          "description": "Child context basic (single step inside)",
+          "tests": [
+            "3-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildWithName",
+          "handler": "child.ChildWithName",
+          "description": "Child context with name",
+          "tests": [
+            "3-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildMultipleSteps",
+          "handler": "child.ChildMultipleSteps",
+          "description": "Child context with multiple sequential steps",
+          "tests": [
+            "3-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildWithError",
+          "handler": "child.ChildWithError",
+          "description": "Child context error (step fails, execution fails)",
+          "tests": [
+            "3-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildErrorCaught",
+          "handler": "child.ChildErrorCaught",
+          "description": "Child context error caught (try/catch, execution succeeds)",
+          "tests": [
+            "3-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildNested",
+          "handler": "child.ChildNested",
+          "description": "Nested child contexts",
+          "tests": [
+            "3-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildWithRetry",
+          "handler": "child.ChildWithRetry",
+          "description": "Child context with step retry (fails then succeeds)",
+          "tests": [
+            "3-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildRetryExhaustion",
+          "handler": "child.ChildRetryExhaustion",
+          "description": "Child context with step retry exhaustion (child fails)",
+          "tests": [
+            "3-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildReplay",
+          "handler": "child.ChildReplay",
+          "description": "Child context replay (returns cached result)",
+          "tests": [
+            "3-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildStepAndWait",
+          "handler": "child.ChildStepAndWait",
+          "description": "Child context with step and wait inside",
+          "tests": [
+            "3-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildLargePayload",
+          "handler": "child.ChildLargePayload",
+          "description": "Child context large payload (ReplayChildren mode)",
+          "tests": [
+            "3-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildInterrupted",
+          "handler": "child.ChildInterrupted",
+          "description": "Child context interrupted and re-executed",
+          "tests": [
+            "3-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildWaitReplay",
+          "handler": "child.ChildWaitReplay",
+          "description": "Child context with wait inside - verify replay",
+          "tests": [
+            "3-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildCustomSerdes",
+          "handler": "child.ChildCustomSerdes",
+          "description": "Child context with custom serdes (succeed)",
+          "tests": [
+            "3-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildErrorNoStep",
+          "handler": "child.ChildErrorNoStep",
+          "description": "Child context error without step (error thrown directly in child body)",
+          "tests": [
+            "3-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildNullResult",
+          "handler": "child.ChildNullResult",
+          "description": "Child context returning null",
+          "tests": [
+            "3-16"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildPrintOnly",
+          "handler": "child.ChildPrintOnly",
+          "description": "Child context with print only (verify no re-execution on replay)",
+          "tests": [
+            "3-17"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ChildStepWaitAfter",
+          "handler": "child.ChildStepWaitAfter",
+          "description": "Child context with step and wait inside, step and wait after",
+          "tests": [
+            "3-18"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    },
+    "invoke": {
+      "logging": false,
+      "role_actions": [
+        "lambda:InvokeFunction"
+      ],
+      "functions": [
+        {
+          "id": "TargetEcho",
+          "handler": "invoke.TargetEcho",
+          "description": "Echo target function \u2014 returns whatever it receives",
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "TargetEchoTenant",
+          "handler": "invoke.TargetEcho",
+          "description": "Echo target function with tenancy enabled",
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "tenancy": {
+            "TenantIsolationMode": "PER_TENANT"
+          }
+        },
+        {
+          "id": "TargetError",
+          "handler": "invoke.TargetError",
+          "description": "Target function that throws an error",
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "TargetSlow",
+          "handler": "invoke.TargetSlow",
+          "description": "Target function that exceeds timeout",
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 5
+          },
+          "timeout": 120
+        },
+        {
+          "id": "TargetNonDurable",
+          "handler": "invoke.TargetNonDurable::handleRequest",
+          "description": "Non-durable target function"
+        },
+        {
+          "id": "InvokeBasic",
+          "handler": "invoke.InvokeBasic",
+          "description": "Invoke basic (target function succeeds)",
+          "tests": [
+            "5-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeWithName",
+          "handler": "invoke.InvokeWithName",
+          "description": "Invoke with explicit name parameter",
+          "tests": [
+            "5-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeComplexObject",
+          "handler": "invoke.InvokeComplexObject",
+          "description": "Invoke returning complex object",
+          "tests": [
+            "5-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeNullResult",
+          "handler": "invoke.InvokeNullResult",
+          "description": "Invoke returning null",
+          "tests": [
+            "5-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeTargetFails",
+          "handler": "invoke.InvokeTargetFails",
+          "description": "Invoke target fails (execution fails)",
+          "tests": [
+            "5-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetError.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeTargetFailsCaught",
+          "handler": "invoke.InvokeTargetFailsCaught",
+          "description": "Invoke target fails, caught",
+          "tests": [
+            "5-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetError.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeTimeout",
+          "handler": "invoke.InvokeTimeout",
+          "description": "Invoke timeout (target takes too long)",
+          "tests": [],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetSlow.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeTimeoutCaught",
+          "handler": "invoke.InvokeTimeoutCaught",
+          "description": "Invoke timeout, caught",
+          "tests": [],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetSlow.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeReplaySkips",
+          "handler": "invoke.InvokeReplaySkips",
+          "description": "Invoke replay skips (cached result)",
+          "tests": [
+            "5-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeReplayRethrows",
+          "handler": "invoke.InvokeReplayRethrows",
+          "description": "Invoke replay re-throws (cached error)",
+          "tests": [
+            "5-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetError.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "StepThenInvoke",
+          "handler": "invoke.StepThenInvoke",
+          "description": "Step then invoke (sequential)",
+          "tests": [
+            "5-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeThenStep",
+          "handler": "invoke.InvokeThenStep",
+          "description": "Invoke then step",
+          "tests": [
+            "5-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeInChildContext",
+          "handler": "invoke.InvokeInChildContext",
+          "description": "Invoke inside child context",
+          "tests": [
+            "5-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeMultipleSequential",
+          "handler": "invoke.InvokeMultipleSequential",
+          "description": "Multiple sequential invokes",
+          "tests": [
+            "5-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME_1": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              },
+              "TARGET_FUNCTION_NAME_2": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeCustomPayloadSerdes",
+          "handler": "invoke.InvokeCustomPayloadSerdes",
+          "description": "Invoke with custom payload serdes",
+          "tests": [
+            "5-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeCustomResultSerdes",
+          "handler": "invoke.InvokeCustomResultSerdes",
+          "description": "Invoke with custom result serdes",
+          "tests": [
+            "5-16"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeLargePayload",
+          "handler": "invoke.InvokeLargePayload",
+          "description": "Invoke large payload",
+          "tests": [
+            "5-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEcho.Arn}:$LATEST"
+              }
+            }
+          }
+        },
+        {
+          "id": "InvokeWithTenantId",
+          "handler": "invoke.InvokeWithTenantId",
+          "description": "Invoke with tenantId",
+          "tests": [
+            "5-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          },
+          "environment": {
+            "Variables": {
+              "TARGET_FUNCTION_NAME": {
+                "Fn::Sub": "${TargetEchoTenant.Arn}:$LATEST"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "map": {
+      "logging": false,
+      "functions": [
+        {
+          "id": "MapBasic",
+          "handler": "map.MapBasic",
+          "description": "Map basic (one step per item, all succeed)",
+          "tests": [
+            "9-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapItemsOnly",
+          "handler": "map.MapItemsOnly",
+          "description": "Map items-only form (no operation name)",
+          "tests": [
+            "9-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapItemIndex",
+          "handler": "map.MapItemIndex",
+          "description": "Map function receives item and index",
+          "tests": [
+            "9-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapItemNamer",
+          "handler": "map.MapItemNamer",
+          "description": "Map with custom iteration names",
+          "tests": [
+            "9-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapItemSerdes",
+          "handler": "map.MapItemSerdes",
+          "description": "Map with a custom per-item serializer",
+          "tests": [
+            "9-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapEmpty",
+          "handler": "map.MapEmpty",
+          "description": "Map with an empty items list",
+          "tests": [
+            "9-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapFailFast",
+          "handler": "map.MapFailFast",
+          "description": "Map fail-fast (tolerated-failure-count=0) stops after first failure",
+          "tests": [
+            "9-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapThrowIfError",
+          "handler": "map.MapThrowIfError",
+          "description": "Map throw-if-error propagates an item failure",
+          "tests": [
+            "9-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapMinSuccessful",
+          "handler": "map.MapMinSuccessful",
+          "description": "Map min-successful early completion",
+          "tests": [
+            "9-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapToleratedWithin",
+          "handler": "map.MapToleratedWithin",
+          "description": "Map tolerated-failure-count within tolerance (all items complete)",
+          "tests": [
+            "9-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapToleratedExceeded",
+          "handler": "map.MapToleratedExceeded",
+          "description": "Map tolerated-failure-count exceeded (stops early)",
+          "tests": [
+            "9-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapToleratedPct",
+          "handler": "map.MapToleratedPct",
+          "description": "Map tolerated-failure-percentage exceeded (stops early)",
+          "tests": [
+            "9-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapConcurrent",
+          "handler": "map.MapConcurrent",
+          "description": "Map real concurrency preserves index-ordered results",
+          "tests": [
+            "9-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapFlat",
+          "handler": "map.MapFlat",
+          "description": "Map with FLAT nesting (virtual iteration contexts)",
+          "tests": [
+            "9-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapSuspendIteration",
+          "handler": "map.MapSuspendIteration",
+          "description": "Map suspends inside an iteration; replay skips the completed iteration",
+          "tests": [
+            "9-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapLargeResult",
+          "handler": "map.MapLargeResult",
+          "description": "Map with a large aggregate result (exceeds checkpoint size threshold)",
+          "tests": [
+            "9-16"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapThenWait",
+          "handler": "map.MapThenWait",
+          "description": "Suspension after a successful map (replay skips the completed map)",
+          "tests": [
+            "9-17"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapFailThenWait",
+          "handler": "map.MapFailThenWait",
+          "description": "Suspension after a map that completed with a failure",
+          "tests": [
+            "9-18"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapOpSerde",
+          "handler": "map.MapOpSerde",
+          "description": "Map operation-level serializer",
+          "tests": [
+            "9-19"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "MapOpSerdeReplay",
+          "handler": "map.MapOpSerdeReplay",
+          "description": "Map operation-level serializer replay",
+          "tests": [
+            "9-20"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    },
+    "parallel": {
+      "logging": false,
+      "functions": [
+        {
+          "id": "Parallel8Basic",
+          "handler": "parallel.ParallelBasic",
+          "description": "Parallel basic (two branches, each a single step, all succeed)",
+          "tests": [
+            "8-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8BranchesOnly",
+          "handler": "parallel.ParallelBranchesOnly",
+          "description": "Parallel invoked with the branches-only form (no name argument)",
+          "tests": [
+            "8-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8NamedBranches",
+          "handler": "parallel.ParallelNamedBranches",
+          "description": "Parallel invoked with named-branch objects (a name plus a function)",
+          "tests": [
+            "8-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8Heterogeneous",
+          "handler": "parallel.ParallelHeterogeneous",
+          "description": "Parallel whose branches return different types (string, number, object)",
+          "tests": [
+            "8-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8Empty",
+          "handler": "parallel.ParallelEmpty",
+          "description": "Parallel invoked with an empty branches list completes immediately",
+          "tests": [
+            "8-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8FailFast",
+          "handler": "parallel.ParallelFailFast",
+          "description": "Parallel fail-fast (via all-successful) stops after first failure",
+          "tests": [
+            "8-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8ThrowIfError",
+          "handler": "parallel.ParallelThrowIfError",
+          "description": "Parallel rethrows a branch failure so the execution fails",
+          "tests": [
+            "8-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8MinSuccessful",
+          "handler": "parallel.ParallelMinSuccessful",
+          "description": "Parallel min-successful early completion",
+          "tests": [
+            "8-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8ToleratedWithinTolerance",
+          "handler": "parallel.ParallelToleratedWithin",
+          "description": "Parallel tolerated-failure-count within tolerance (all branches complete)",
+          "tests": [
+            "8-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8ToleratedExceeded",
+          "handler": "parallel.ParallelToleratedExceeded",
+          "description": "Parallel tolerated-failure-count exceeded (stops early)",
+          "tests": [
+            "8-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8ToleratedPct",
+          "handler": "parallel.ParallelToleratedPct",
+          "description": "Parallel tolerated failure percentage exceeded",
+          "tests": [
+            "8-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8Concurrent",
+          "handler": "parallel.ParallelConcurrent",
+          "description": "Parallel real concurrency preserves index-ordered results",
+          "tests": [
+            "8-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "Parallel8Flat",
+          "handler": "parallel.ParallelFlat",
+          "description": "Parallel with FLAT nesting (virtual branch contexts)",
+          "tests": [
+            "8-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelItemSerdes",
+          "handler": "parallel.ParallelItemSerdes",
+          "description": "Parallel with a custom per-branch serializer",
+          "tests": [
+            "8-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelReplay",
+          "handler": "parallel.ParallelReplaySkipsSucceeded",
+          "description": "Parallel replay skips succeeded branches across a wait suspension",
+          "tests": [
+            "8-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelAllFail",
+          "handler": "parallel.ParallelAllFail",
+          "description": "Parallel where all branches fail (within tolerance)",
+          "tests": [
+            "8-16"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelMinNotReached",
+          "handler": "parallel.ParallelMinNotReached",
+          "description": "Parallel min-successful not reached (all branches run)",
+          "tests": [
+            "8-17"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelCombinedConfig",
+          "handler": "parallel.ParallelCombinedConfig",
+          "description": "Parallel combined completion config (min-successful + tolerated-failure-count)",
+          "tests": [
+            "8-18"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelBadConcurrency",
+          "handler": "parallel.ParallelBadConcurrency",
+          "description": "Parallel with invalid max-concurrency raises a validation error",
+          "tests": [
+            "8-19"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelAccessors",
+          "handler": "parallel.ParallelAccessors",
+          "description": "Parallel ParallelResult accessors",
+          "tests": [
+            "8-20"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelNested",
+          "handler": "parallel.ParallelNested",
+          "description": "Nested parallel (parallel inside a parallel branch)",
+          "tests": [
+            "8-21"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "ParallelPctBoundary",
+          "handler": "parallel.ParallelPctBoundary",
+          "description": "Parallel tolerated failure percentage boundary",
+          "tests": [
+            "8-22"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    },
+    "plugin": {
+      "logging": true,
+      "functions": [
+        {
+          "id": "PluginInvocationLifecycle",
+          "handler": "plugin.PluginInvocationLifecycle",
+          "description": "Plugin invocation lifecycle hooks (start and end on a single invocation)",
+          "tests": [
+            "10-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginOperationLifecycle",
+          "handler": "plugin.PluginOperationLifecycle",
+          "description": "Plugin operation lifecycle hooks (step start and terminal end)",
+          "tests": [
+            "10-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginAttemptHooksRetry",
+          "handler": "plugin.PluginAttemptHooksRetry",
+          "description": "Plugin attempt hooks fire per step attempt with attempt number and outcome",
+          "tests": [
+            "10-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginErrorIsolation",
+          "handler": "plugin.PluginErrorIsolation",
+          "description": "Plugin exceptions are swallowed and never affect the execution outcome",
+          "tests": [
+            "10-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginMultiplePlugins",
+          "handler": "plugin.PluginMultiplePlugins",
+          "description": "Multiple registered plugins all receive lifecycle hooks",
+          "tests": [
+            "10-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginFirstInvocationFlag",
+          "handler": "plugin.PluginFirstInvocationFlag",
+          "description": "Plugin sees is-first-invocation true once, then false on replay",
+          "tests": [
+            "10-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginTerminalFailure",
+          "handler": "plugin.PluginTerminalFailure",
+          "description": "Plugin invocation-end hook receives FAILED status when execution fails",
+          "tests": [
+            "10-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginOperationChange",
+          "handler": "plugin.PluginOperationChange",
+          "description": "Plugin operation-change hook reports updated operations and the full operation map",
+          "tests": [
+            "10-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginExternalUpdateOnInvoke",
+          "handler": "plugin.PluginExternalUpdateOnInvoke",
+          "description": "Plugin sees a wait completed externally between invocations as an updated operation",
+          "tests": [
+            "10-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginWaitOperationHooks",
+          "handler": "plugin.PluginWaitOperationHooks",
+          "description": "Plugin operation-start and operation-end hooks fire for wait-type operations",
+          "tests": [
+            "10-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginNestedParentLinkage",
+          "handler": "plugin.PluginNestedParentLinkage",
+          "description": "Plugin operation hooks report parent id for a step nested in a child context",
+          "tests": [
+            "10-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginParallelBranchHooks",
+          "handler": "plugin.PluginParallelBranchHooks",
+          "description": "Plugin user-function hooks fire per parallel branch with parent linkage",
+          "tests": [
+            "10-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginReplayFlags",
+          "handler": "plugin.PluginReplayFlags",
+          "description": "Non-terminal operations replay with replay=true; terminal operations are not re-emitted",
+          "tests": [
+            "10-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginRetryExhaustion",
+          "handler": "plugin.PluginRetryExhaustion",
+          "description": "Attempt hooks fire for every attempt until exhaustion, then operation-end reports FAILED",
+          "tests": [
+            "10-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginSuspensionInvocationEnd",
+          "handler": "plugin.PluginSuspensionInvocationEnd",
+          "description": "Invocation-end fires for every invocation, non-terminal on suspension and terminal at completion",
+          "tests": [
+            "10-16"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginFaultyAndHealthy",
+          "handler": "plugin.PluginFaultyAndHealthy",
+          "description": "A plugin that throws in every hook never blocks another plugin's hooks or the execution",
+          "tests": [
+            "10-17"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginOperationEndPayload",
+          "handler": "plugin.PluginOperationEndPayload",
+          "description": "Operation-end hook exposes checkpointed results and failures",
+          "tests": [
+            "10-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginPendingWaitReplay",
+          "handler": "plugin.PluginPendingWaitReplay",
+          "description": "A pending wait re-emits operation-start with replay state",
+          "tests": [
+            "10-18"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginInvocationInfoFields",
+          "handler": "plugin.PluginInvocationInfoFields",
+          "description": "Invocation hooks expose their complete information surface",
+          "tests": [
+            "10-19"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginOperationInfoFields",
+          "handler": "plugin.PluginOperationInfoFields",
+          "description": "Operation hooks expose their complete information surface",
+          "tests": [
+            "10-20"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginAttemptInfoFields",
+          "handler": "plugin.PluginAttemptInfoFields",
+          "description": "Attempt hooks expose their complete information surface",
+          "tests": [
+            "10-21"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginOperationChangeFields",
+          "handler": "plugin.PluginOperationChangeFields",
+          "description": "Operation-change deltas expose complete operation snapshots",
+          "tests": [
+            "10-22"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "PluginContextInfoFields",
+          "handler": "plugin.PluginContextInfoFields",
+          "description": "Context hooks expose subtype and child replay state",
+          "tests": [
+            "10-23"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    },
+    "step": {
+      "logging": true,
+      "functions": [
+        {
+          "id": "StepBasic",
+          "handler": "step.StepBasic",
+          "description": "Step basic (succeeds on first attempt)",
+          "tests": [
+            "1-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepWithName",
+          "handler": "step.StepWithName",
+          "description": "Step with explicit name parameter",
+          "tests": [
+            "1-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepNested",
+          "handler": "step.StepNested",
+          "description": "Sequential steps where second depends on first",
+          "tests": [
+            "1-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepComplexObject",
+          "handler": "step.StepComplexObject",
+          "description": "Returning complex object with nested structure",
+          "tests": [
+            "1-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepNullResult",
+          "handler": "step.StepNullResult",
+          "description": "Undefined/null result",
+          "tests": [
+            "1-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepCustomSerdes",
+          "handler": "step.StepCustomSerdes",
+          "description": "Custom serdes (per-step) transforms to uppercase",
+          "tests": [
+            "1-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepLogging",
+          "handler": "step.StepLogging",
+          "description": "Step with context logger",
+          "tests": [
+            "1-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepAndWaitReplay",
+          "handler": "step.StepAndWaitReplay",
+          "description": "Step and wait with replay",
+          "tests": [
+            "1-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepReplaySkipsSucceeded",
+          "handler": "step.StepReplaySkipsSucceeded",
+          "description": "Replay skips succeeded step",
+          "tests": [
+            "1-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepReplayRethrowsFailed",
+          "handler": "step.StepReplayRethrowsFailed",
+          "description": "Replay re-throws failed step",
+          "tests": [
+            "1-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepWithRetry",
+          "handler": "step.StepWithRetry",
+          "description": "Step with retry (fails then succeeds)",
+          "tests": [
+            "1-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepRetryExhaustion",
+          "handler": "step.StepRetryExhaustion",
+          "description": "Retry exhaustion (max attempts)",
+          "tests": [
+            "1-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepDefaultRetry",
+          "handler": "step.StepDefaultRetry",
+          "description": "Default retry strategy",
+          "tests": [
+            "1-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepRetryCustomConfig",
+          "handler": "step.StepRetryCustomConfig",
+          "description": "Retry with custom config (fixed interval and backoff)",
+          "tests": [
+            "1-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepRetrySpecificException",
+          "handler": "step.StepRetrySpecificException",
+          "description": "Retry specific exception",
+          "tests": [
+            "1-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepRetryNonRetryable",
+          "handler": "step.StepRetryNonRetryable",
+          "description": "Retry specific exception (non-retryable fails)",
+          "tests": [
+            "1-16"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepAtMostOnceNoRetry",
+          "handler": "step.StepAtMostOnceNoRetry",
+          "description": "Step with AtMostOncePerRetry semantics (interrupted, no retry)",
+          "tests": [
+            "1-17"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepAtMostOnceWithRetry",
+          "handler": "step.StepAtMostOnceWithRetry",
+          "description": "AtMostOnce interrupted (with retry, succeeds on second attempt)",
+          "tests": [
+            "1-18"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepWithError",
+          "handler": "step.StepWithError",
+          "description": "Step with error (fails permanently)",
+          "tests": [
+            "1-19"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "StepErrorCaught",
+          "handler": "step.StepErrorCaught",
+          "description": "Error caught and handled (try/catch)",
+          "tests": [
+            "1-20"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    },
+    "wait": {
+      "logging": false,
+      "functions": [
+        {
+          "id": "WaitBasic",
+          "handler": "wait.WaitBasic",
+          "description": "Wait basic",
+          "tests": [
+            "2-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitWithName",
+          "handler": "wait.WaitWithName",
+          "description": "Wait with explicit name parameter",
+          "tests": [
+            "2-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitMultipleSequential",
+          "handler": "wait.WaitMultipleSequential",
+          "description": "Multiple sequential waits",
+          "tests": [
+            "2-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitDurationUnits",
+          "handler": "wait.WaitDurationUnits",
+          "description": "Wait with different duration units (minutes)",
+          "tests": [
+            "2-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 3700
+          }
+        },
+        {
+          "id": "WaitLongDuration",
+          "handler": "wait.WaitLongDuration",
+          "description": "Wait with long duration (1 hour)",
+          "tests": [
+            "2-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 7200
+          }
+        }
+      ]
+    },
+    "wait_for_callback": {
+      "logging": false,
+      "functions": [
+        {
+          "id": "WaitForCallbackBasic",
+          "handler": "wait_for_callback.WaitForCallbackBasic",
+          "description": "Wait-for-callback basic (success via external callback)",
+          "tests": [
+            "7-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackExplicitName",
+          "handler": "wait_for_callback.WaitForCallbackExplicitName",
+          "description": "Wait-for-callback with explicit static name",
+          "tests": [
+            "7-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackAnonymous",
+          "handler": "wait_for_callback.WaitForCallbackAnonymous",
+          "description": "Wait-for-callback with anonymous submitter (no name)",
+          "tests": [
+            "7-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackExternalFailure",
+          "handler": "wait_for_callback.WaitForCallbackExternalFailure",
+          "description": "Wait-for-callback external failure (uncaught)",
+          "tests": [
+            "7-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackTimeout",
+          "handler": "wait_for_callback.WaitForCallbackTimeout",
+          "description": "Wait-for-callback timeout (no external completion)",
+          "tests": [
+            "7-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackFailureCaught",
+          "handler": "wait_for_callback.WaitForCallbackFailureCaught",
+          "description": "Wait-for-callback external failure caught (recovers)",
+          "tests": [
+            "7-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackSubmitterRetryExhaustion",
+          "handler": "wait_for_callback.WaitForCallbackSubmitterRetryExhaustion",
+          "description": "Wait-for-callback submitter retry exhaustion",
+          "tests": [
+            "7-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackInChildContext",
+          "handler": "wait_for_callback.WaitForCallbackInChildContext",
+          "description": "Wait-for-callback inside a child context",
+          "tests": [
+            "7-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackTwoSequential",
+          "handler": "wait_for_callback.WaitForCallbackTwoSequential",
+          "description": "Multiple sequential wait-for-callback operations",
+          "tests": [
+            "7-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackMixedOps",
+          "handler": "wait_for_callback.WaitForCallbackMixedOps",
+          "description": "Wait-for-callback mixed with wait and step",
+          "tests": [
+            "7-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackJsonResult",
+          "handler": "wait_for_callback.WaitForCallbackJsonResult",
+          "description": "Wait-for-callback with structured (JSON) result deserialization",
+          "tests": [
+            "7-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackHeartbeatTimeout",
+          "handler": "wait_for_callback.WaitForCallbackHeartbeatTimeout",
+          "description": "Wait-for-callback heartbeat timeout (no heartbeat sent)",
+          "tests": [
+            "7-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackHeartbeatThenSuccess",
+          "handler": "wait_for_callback.WaitForCallbackHeartbeatThenSuccess",
+          "description": "Wait-for-callback with heartbeat then success",
+          "tests": [
+            "7-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackTimeoutCaught",
+          "handler": "wait_for_callback.WaitForCallbackTimeoutCaught",
+          "description": "Wait-for-callback timeout caught (recovers)",
+          "tests": [
+            "7-14"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForCallbackNullResult",
+          "handler": "wait_for_callback.WaitForCallbackNullResult",
+          "description": "Wait-for-callback success with empty (null) payload",
+          "tests": [
+            "7-15"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    },
+    "wait_for_condition": {
+      "logging": false,
+      "functions": [
+        {
+          "id": "WaitForConditionBasic",
+          "handler": "wait_for_condition.WaitForConditionBasic",
+          "description": "Wait-for-condition basic (polls until threshold met)",
+          "tests": [
+            "6-1"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionImmediate",
+          "handler": "wait_for_condition.WaitForConditionImmediate",
+          "description": "Wait-for-condition immediate (condition already met on first check)",
+          "tests": [
+            "6-2"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionNamed",
+          "handler": "wait_for_condition.WaitForConditionNamed",
+          "description": "Wait-for-condition with explicit name",
+          "tests": [
+            "6-3"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionInitialState",
+          "handler": "wait_for_condition.WaitForConditionInitialState",
+          "description": "Wait-for-condition custom initial state (state threaded across polls)",
+          "tests": [
+            "6-4"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionFixedDelay",
+          "handler": "wait_for_condition.WaitForConditionFixedDelay",
+          "description": "Wait-for-condition fixed-delay wait strategy",
+          "tests": [
+            "6-5"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionMaxAttempts",
+          "handler": "wait_for_condition.WaitForConditionMaxAttempts",
+          "description": "Wait-for-condition max attempts exceeded (failure)",
+          "tests": [
+            "6-6"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionCheckThrows",
+          "handler": "wait_for_condition.WaitForConditionCheckThrows",
+          "description": "Wait-for-condition check function throws (uncaught failure)",
+          "tests": [
+            "6-7"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionCheckThrowsCaught",
+          "handler": "wait_for_condition.WaitForConditionCheckThrowsCaught",
+          "description": "Wait-for-condition check throws, caught by handler (recovers)",
+          "tests": [
+            "6-8"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionComplexObject",
+          "handler": "wait_for_condition.WaitForConditionComplexObject",
+          "description": "Wait-for-condition with a complex object state",
+          "tests": [
+            "6-9"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionNullResult",
+          "handler": "wait_for_condition.WaitForConditionNullResult",
+          "description": "Wait-for-condition null result",
+          "tests": [
+            "6-10"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionCustomSerdes",
+          "handler": "wait_for_condition.WaitForConditionCustomSerdes",
+          "description": "Wait-for-condition with custom state serdes",
+          "tests": [
+            "6-11"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionThenStep",
+          "handler": "wait_for_condition.WaitForConditionThenStep",
+          "description": "Wait-for-condition followed by a step (result passed onward)",
+          "tests": [
+            "6-12"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        },
+        {
+          "id": "WaitForConditionMultipleSequential",
+          "handler": "wait_for_condition.WaitForConditionMultipleSequential",
+          "description": "Multiple sequential wait_for_condition operations \u2014 first result seeds second",
+          "tests": [
+            "6-13"
+          ],
+          "durable": {
+            "RetentionPeriodInDays": 7,
+            "ExecutionTimeout": 300
+          }
+        }
+      ]
+    }
+  }
+}

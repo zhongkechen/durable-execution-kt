@@ -1,0 +1,165 @@
+package io.github.zhongkechen.durable.internal
+
+import io.github.zhongkechen.durable.BatchCompletion
+import io.github.zhongkechen.durable.CompletionPolicy
+import io.github.zhongkechen.durable.ItemResult
+import java.util.concurrent.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+
+internal data class BatchWork<T>(
+    val index: Int,
+    val name: String?,
+    val execute: suspend () -> T,
+)
+
+internal data class BatchOutcome<T>(
+    val completion: BatchCompletion,
+    val items: List<ItemResult<T>>,
+)
+
+private sealed interface BatchSignal<out T> {
+    val index: Int
+
+    data class Completed<T>(
+        override val index: Int,
+        val result: ItemResult<T>,
+    ) : BatchSignal<T>
+
+    data class Suspended(
+        override val index: Int,
+        val error: ExecutionSuspended,
+    ) : BatchSignal<Nothing>
+}
+
+internal suspend fun <T> executeBatch(
+    work: List<BatchWork<T>>,
+    maximumConcurrency: Int,
+    completionPolicy: CompletionPolicy,
+): BatchOutcome<T> {
+    if (work.isEmpty()) return BatchOutcome(BatchCompletion.ALL_COMPLETED, emptyList())
+    require(maximumConcurrency >= 1) { "maximumConcurrency must be positive" }
+
+    return supervisorScope {
+        val completed = Channel<BatchSignal<T>>(Channel.UNLIMITED)
+        val results = arrayOfNulls<ItemResult<T>>(work.size)
+        val active = mutableMapOf<Int, Job>()
+        var nextIndex = 0
+
+        fun startNext() {
+            val item = work[nextIndex++]
+            active[item.index] =
+                launch {
+                    val signal =
+                        try {
+                            BatchSignal.Completed(
+                                index = item.index,
+                                result =
+                                    try {
+                                        ItemResult.Success(item.index, item.name, item.execute())
+                                    } catch (suspension: ExecutionSuspended) {
+                                        throw suspension
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (error: Throwable) {
+                                        ItemResult.Failure(item.index, item.name, error)
+                                    },
+                            )
+                        } catch (suspension: ExecutionSuspended) {
+                            BatchSignal.Suspended(item.index, suspension)
+                        }
+                    completed.send(signal)
+                }
+        }
+
+        repeat(minOf(maximumConcurrency, work.size)) { startNext() }
+
+        var completion = BatchCompletion.ALL_COMPLETED
+        var received = 0
+        var stop = false
+        var suspended = false
+        try {
+            while (received < work.size && !stop) {
+                when (val signal = completed.receive()) {
+                    is BatchSignal.Suspended -> {
+                        active.remove(signal.index)
+                        suspended = true
+                        throw signal.error
+                    }
+                    is BatchSignal.Completed -> {
+                        active.remove(signal.index)
+                        val result = signal.result
+                        results[result.index] = result
+                        received += 1
+
+                        val successes = results.count { it is ItemResult.Success<*> }
+                        val failures = results.count { it is ItemResult.Failure }
+                        stop =
+                            when (completionPolicy) {
+                                CompletionPolicy.AllCompleted -> false
+                                is CompletionPolicy.MinimumSuccessful -> {
+                                    if (successes >= completionPolicy.count) {
+                                        completion = BatchCompletion.MINIMUM_SUCCEEDED
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                                is CompletionPolicy.TolerateFailures -> {
+                                    val countExceeded =
+                                        completionPolicy.count?.let { failures > it } ?: false
+                                    val percentageExceeded =
+                                        completionPolicy.percentage?.let {
+                                            failures * 100.0 / work.size > it
+                                        } ?: false
+                                    if (countExceeded || percentageExceeded) {
+                                        completion = BatchCompletion.FAILURE_LIMIT_EXCEEDED
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                                is CompletionPolicy.Combined -> {
+                                    val failureExceeded =
+                                        (completionPolicy.toleratedFailures?.let { failures > it } ?: false) ||
+                                            (
+                                                completionPolicy.toleratedFailurePercentage?.let {
+                                                    failures * 100.0 / work.size > it
+                                                } ?: false
+                                            )
+                                    when {
+                                        failureExceeded -> {
+                                            completion = BatchCompletion.FAILURE_LIMIT_EXCEEDED
+                                            true
+                                        }
+                                        completionPolicy.minimumSuccessful?.let { successes >= it } == true -> {
+                                            completion = BatchCompletion.MINIMUM_SUCCEEDED
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                }
+                            }
+
+                        if (!stop && nextIndex < work.size) startNext()
+                    }
+                }
+            }
+        } finally {
+            if (stop || suspended) active.values.forEach { if (it.isActive) it.cancel() }
+            active.values.joinAll()
+            completed.close()
+        }
+
+        BatchOutcome(
+            completion = completion,
+            items =
+                results.mapIndexed { index, result ->
+                    result ?: ItemResult.Skipped(work[index].index, work[index].name)
+                },
+        )
+    }
+}

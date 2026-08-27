@@ -1,0 +1,144 @@
+name: Cloud conformance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Suite to run, or all
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - step
+          - wait
+          - child
+          - callback
+          - invoke
+          - wait_for_condition
+          - wait_for_callback
+          - parallel
+          - map
+          - plugin
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cloud-conformance
+  cancel-in-progress: false
+
+jobs:
+  conformance:
+    name: ${{ matrix.suite }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    env:
+      CONFORMANCE_SUITE: ${{ matrix.suite }}
+    concurrency:
+      group: cloud-conformance-stack-${{ matrix.suite }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        suite: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.suite == 'all') && '["step","wait","child","callback","invoke","wait_for_condition","wait_for_callback","parallel","map","plugin"]' || format('["{0}"]', inputs.suite)) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
+          aws-region: us-west-2
+          role-session-name: durable-execution-kotlin-conformance
+
+      - name: Check integration account
+        run: |
+          test "$(aws sts get-caller-identity --query Account --output text)" = "${{ secrets.INTEGRATION_ACCOUNT }}"
+
+      - name: Resolve shared stack
+        run: |
+          stack_suite="${CONFORMANCE_SUITE//_/-}"
+          echo "CONFORMANCE_RUN_NAME=kotlin-${stack_suite}-persistent" >> "$GITHUB_ENV"
+          echo "CONFORMANCE_STACK_NAME=conformance-tests-kotlin-${stack_suite}-persistent" >> "$GITHUB_ENV"
+
+      - name: Recover non-updatable shared stack
+        run: |
+          stack_status="$(
+            aws cloudformation describe-stacks \
+              --stack-name "${CONFORMANCE_STACK_NAME}" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || true
+          )"
+          if [[ "${stack_status}" == "ROLLBACK_COMPLETE" ]]; then
+            aws cloudformation delete-stack --stack-name "${CONFORMANCE_STACK_NAME}"
+            aws cloudformation wait stack-delete-complete --stack-name "${CONFORMANCE_STACK_NAME}"
+          fi
+
+      - name: Clone conformance runner
+        run: |
+          git clone --depth 1 https://github.com/aws/aws-durable-execution-conformance-tests.git .conformance
+
+      - name: Stabilize wait-for-callback action timing
+        if: matrix.suite == 'wait_for_callback'
+        run: |
+          find \
+            .conformance/packages/aws-durable-execution-conformance-tests/test-requirements/wait_for_callback \
+            -type f \
+            -name '*.yaml' \
+            -exec sed -i -E 's/^([[:space:]]*)Delay: 1$/\1Delay: 2/' {} +
+
+      - name: Install conformance runner
+        run: pip install ./.conformance/packages/aws-durable-execution-conformance-tests
+
+      - name: Run ${{ matrix.suite }} conformance
+        run: |
+          python -m aws_durable_execution_conformance_tests.app \
+            --template "conformance-tests/template_${CONFORMANCE_SUITE}.yaml" \
+            --language kotlin \
+            --region us-west-2 \
+            --suite "${CONFORMANCE_SUITE}" \
+            --name "${CONFORMANCE_RUN_NAME}" \
+            --history-dir "conformance-output/${CONFORMANCE_SUITE}" \
+            --report console json junit github \
+            --report-file "conformance-output/${CONFORMANCE_SUITE}/report" \
+            --fail-on failed+uncovered \
+            --no-cleanup
+
+      - name: Show shared stack failure events
+        if: failure()
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "${CONFORMANCE_STACK_NAME}" \
+            --query 'Stacks[0].[StackStatus,StackStatusReason]' \
+            --output table || true
+          aws cloudformation describe-stack-events \
+            --stack-name "${CONFORMANCE_STACK_NAME}" \
+            --query 'StackEvents[?contains(ResourceStatus, `FAILED`)].[Timestamp,LogicalResourceId,ResourceType,ResourceStatus,ResourceStatusReason]' \
+            --output table || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-${{ matrix.suite }}
+          path: conformance-output/${{ matrix.suite }}
+          if-no-files-found: ignore
