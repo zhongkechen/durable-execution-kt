@@ -65,7 +65,7 @@ jobs:
 
       - uses: aws-actions/setup-sam@v3
 
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.INTEGRATION_ROLE_ARN }}
           aws-region: us-west-2
