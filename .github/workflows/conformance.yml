@@ -61,7 +61,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - uses: aws-actions/setup-sam@v2
 
