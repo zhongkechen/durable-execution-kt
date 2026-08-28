@@ -13,7 +13,7 @@ kotlin {
 dependencies {
     implementation(project(":core"))
     implementation("com.amazonaws:aws-lambda-java-core:1.4.0")
-    implementation("com.amazonaws:aws-lambda-java-log4j2:1.6.4")
+    implementation("com.amazonaws:aws-lambda-java-log4j2:1.6.5")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation("org.apache.logging.log4j:log4j-slf4j2-impl:2.26.1")
