@@ -8,8 +8,8 @@ kotlin {
 }
 
 dependencies {
-    api(platform("software.amazon.awssdk:bom:2.53.1"))
     api(platform("com.fasterxml.jackson:jackson-bom:2.22.2"))
+    api(platform("software.amazon.awssdk:bom:2.54.3"))
     api("com.amazonaws:aws-lambda-java-core:1.4.0")
     api("software.amazon.awssdk:lambda")
     api("org.slf4j:slf4j-api:2.0.18")
